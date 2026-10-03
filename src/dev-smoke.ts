@@ -306,5 +306,35 @@ console.log('\n== Flight helpers ==');
   }
 }
 
+
+// ---------------------------------------------------------------- sprite aircraft
+console.log('\n== Sprite aircraft (Typhoon) ==');
+{
+  const spec = getAircraft('typhoon');
+  const sp = spec.sprite!;
+  check('typhoon has a sprite frame', !!sp, sp ? sp.src : 'none');
+  check(
+    'sprite frame matches the airframe size',
+    Math.abs(sp.xmax - sp.xmin - spec.length) < 1.2 && sp.ymax - sp.ymin < spec.length * 0.4,
+    `frame ${(sp.xmax - sp.xmin).toFixed(2)} m x ${(sp.ymax - sp.ymin).toFixed(2)} m for a ${spec.length} m airframe`,
+  );
+  const mainBottom = sp.main.pivotY - sp.main.legLen - sp.main.wheelR;
+  const noseBottom = sp.nose.pivotY - sp.nose.legLen - sp.nose.wheelR;
+  check(
+    'gear reaches the ground',
+    Math.abs(mainBottom + spec.gearH) < 0.2 && Math.abs(noseBottom + spec.gearH) < 0.2,
+    `main ${mainBottom.toFixed(2)} m, nose ${noseBottom.toFixed(2)} m, gearH ${spec.gearH}`,
+  );
+  check('airframe clears the ground on its wheels', sp.ymin > -spec.gearH, `lowest painted point ${sp.ymin} m vs ground −${spec.gearH} m`);
+  // it must fly like a jet and survive a landing like the rest
+  const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+  sim.u = spec.vCruise;
+  sim.vy = 0;
+  sim.throttle = 0.8;
+  for (let i = 0; i < 20 * 60; i++) sim.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+  check('typhoon cruises at speed', sim.alive && sim.ias > 120, `ias ${sim.ias.toFixed(0)} m/s, mach ${sim.mach.toFixed(2)}`);
+  check('typhoon has no tailhook', !spec.carrier && spec.hookX === 0, `carrier=${spec.carrier}`);
+}
+
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);
 if (failures > 0) process.exit(1);

@@ -505,6 +505,118 @@ function sparrow(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: Pose, col: C
   navLights(ctx, P, -4.2, 2.0, 2);
 }
 
+// ---------------------------------------------------------------- sprite art
+/**
+ * Hand-drawn side views are loaded once and cached. Everything is drawn in the
+ * same metre-based frame as the procedural aircraft, so the camera, the
+ * retractable gear, particles and the physics all line up.
+ */
+const spriteCache = new Map<string, { img: HTMLImageElement; ok: boolean }>();
+
+function spriteImage(src: string): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null; // headless (tests): fall back
+  let rec = spriteCache.get(src);
+  if (!rec) {
+    const img = new Image();
+    rec = { img, ok: false };
+    img.onload = () => {
+      rec!.ok = true;
+    };
+    img.src = src;
+    spriteCache.set(src, rec);
+  }
+  return rec.ok ? rec.img : null;
+}
+
+/** Gear leg: swings down out of the bay as `g` goes 0 → 1. */
+function gearLeg(
+  ctx: CanvasRenderingContext2D,
+  g: { x: number; pivotY: number; legLen: number; wheelR: number },
+  gExt: number,
+  col: Col,
+  door: boolean,
+): void {
+  const ang = -1.5 * (1 - gExt); // stowed = folded back into the fuselage
+  const ex = g.x + Math.sin(ang) * g.legLen;
+  const ey = g.pivotY - Math.cos(ang) * g.legLen;
+  ctx.strokeStyle = col(198, 202, 208);
+  ctx.lineWidth = 0.17;
+  ctx.beginPath();
+  ctx.moveTo(g.x, g.pivotY);
+  ctx.lineTo(ex, ey);
+  // drag brace
+  ctx.moveTo(g.x + (ex - g.x) * 0.45, g.pivotY + (ey - g.pivotY) * 0.45);
+  ctx.lineTo(g.x + Math.sign(g.x - ex || 1) * 0.55, g.pivotY - 0.42);
+  ctx.stroke();
+  if (door) {
+    ctx.strokeStyle = col(150, 155, 162);
+    ctx.lineWidth = 0.1;
+    ctx.beginPath();
+    ctx.moveTo(g.x - 0.22, g.pivotY);
+    ctx.lineTo(g.x + 0.5, g.pivotY);
+    ctx.stroke();
+  }
+  wheel(ctx, ex, ey, g.wheelR, col);
+}
+
+/** Aircraft drawn from a hand-drawn sprite, with live retractable gear. */
+function spriteAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: Pose, col: Col, img: HTMLImageElement): void {
+  const sp = s.sprite!;
+  const w = sp.xmax - sp.xmin;
+  const h = sp.ymax - sp.ymin;
+  ctx.save();
+  // the drawing frame has +y up, so flip the bitmap back to upright
+  ctx.globalAlpha = P.crashed ? 0.6 : 1;
+  ctx.translate(sp.xmin, sp.ymax);
+  ctx.scale(1, -1);
+  ctx.drawImage(img, 0, 0, w, h);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  if (P.crashed) {
+    ctx.fillStyle = col(30, 30, 34, 0.45);
+    ctx.fillRect(sp.xmin, sp.ymin, w, h);
+  }
+
+  // afterburner / jet pipe
+  const t = P.thrust;
+  if (t > 0.05) {
+    const n = sp.nozzle;
+    const flick = 0.75 + 0.25 * Math.sin(P.time * 47);
+    const len = (0.35 + t * t * 2.6) * flick;
+    const rr2 = n.r * (0.5 + t * 0.55);
+    const grd = ctx.createRadialGradient(n.x - len * 0.4, n.y, 0.05, n.x - len * 0.4, n.y, rr2);
+    grd.addColorStop(0, t > 0.8 ? 'rgba(255,255,240,0.95)' : 'rgba(255,214,170,0.75)');
+    grd.addColorStop(0.45, t > 0.8 ? 'rgba(120,190,255,0.75)' : 'rgba(255,160,80,0.55)');
+    grd.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.moveTo(n.x, n.y + rr2 * 0.55);
+    ctx.quadraticCurveTo(n.x - len * 0.6, n.y, n.x, n.y - rr2 * 0.55);
+    ctx.quadraticCurveTo(n.x - len, n.y, n.x, n.y + rr2 * 0.55);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // retractable gear
+  if (!s.fixedGear && P.gear > 0.02) {
+    gearLeg(ctx, sp.nose, P.gear, col, P.gear < 0.95);
+    gearLeg(ctx, sp.main, P.gear, col, false);
+  }
+
+  // anti-collision beacon + tail navigation light
+  const blink = Math.sin(P.time * 6) > 0.2;
+  ctx.fillStyle = blink ? col(255, 70, 60) : col(90, 30, 30);
+  ctx.beginPath();
+  ctx.arc(sp.xmax - 0.45, sp.ymax - 0.35, 0.09, 0, Math.PI * 2);
+  ctx.fill();
+  if (P.night) {
+    ctx.fillStyle = col(255, 255, 255);
+    ctx.beginPath();
+    ctx.arc(sp.xmin + 0.12, sp.ymin + 0.3, 0.07, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 export function drawAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: Pose): void {
   const L = P.light;
   const col: Col = (r, g, b, a = 1) => {
@@ -513,6 +625,13 @@ export function drawAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: 
     const cb = Math.min(255, b * L[2]) | 0;
     return `rgba(${cr},${cg},${cb},${a})`;
   };
+  if (s.sprite) {
+    const img = spriteImage(s.sprite.src);
+    if (img) {
+      spriteAircraft(ctx, s, P, col, img);
+      return;
+    }
+  }
   if (s.id === 'hornet') hornet(ctx, s, P, col);
   else if (s.id === 'corsair') corsair(ctx, s, P, col);
   else sparrow(ctx, s, P, col);

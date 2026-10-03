@@ -252,7 +252,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
         {/* aircraft */}
         <section className="mb-8">
           <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('aircraftTitle')}</h2>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {AIRCRAFT.map((a) => {
               const carrierLock = mode === 'carrier' && !a.carrier;
               const isOwned = profile.owned.includes(a.id);

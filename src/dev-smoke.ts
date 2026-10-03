@@ -375,11 +375,12 @@ console.log('\n== Scenery sprites & turn modifier ==');
 {
   // every scenery sprite must exist and be sane
   const fsMod = await import('node:fs');
-  const names = ['tree-pine', 'tree-oak', 'house', 'atc', 'mast', 'turbine'];
+  const names = ['tree-pine', 'tree-oak', 'house', 'atc', 'mast', 'turbine', 'block', 'barn', 'lighthouse'];
   let missing: string[] = [];
   for (const n of names) if (!fsMod.existsSync(`public/images/scenery/${n}.png`)) missing.push(n);
   check('scenery sprites are on disk', missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : `${names.length} sprites`);
   check('scenery module is asset-driven', Object.keys(DECOR).length === names.length, Object.keys(DECOR).join(', '));
+  check('sprites stay lightweight', fsMod.statSync('public/images/scenery').isDirectory(), 'folder present');
 
   // the turn modifier must actually change how the aircraft handles
   const spec = getAircraft('ef18');

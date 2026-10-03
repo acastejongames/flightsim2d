@@ -545,6 +545,18 @@ export class Renderer {
     return clamp(0.42 + this.light[0] * 0.5 - this.mood.cover * 0.22 - storminess, 0.22, 1.05);
   }
 
+  /** distance haze colour + strength for scenery sprites near the horizon */
+  private decorHaze(wx: number): { col: string; a: number } {
+    const d = Math.abs(wx - this.cam.x);
+    const a = clamp((d - 900) / 5200, 0, 0.62) * (0.5 + this.mood.cover * 0.3);
+    const night = this.tod.night;
+    const sky = this.tod.skyBot;
+    const r = Math.round(sky[0] * (night ? 0.5 : 0.94));
+    const g = Math.round(sky[1] * (night ? 0.55 : 0.95));
+    const b = Math.round(sky[2] * (night ? 0.6 : 0.97));
+    return { col: `rgb(${r},${g},${b})`, a };
+  }
+
   /**
    * Draw a scenery sprite standing on the terrain, given its real height in
    * metres. Returns false when there is nothing to draw (still loading).
@@ -558,11 +570,22 @@ export class Renderer {
     if (hpx < 2.5) return false;
     const px = this.sx(wx);
     if (px < -hpx * spr.aspect - 40 || px > this.W + hpx * spr.aspect + 40) return false;
-    drawDecorSprite(this.ctx, spr, px, this.sy(ground), hpx, {
+    const baseY = this.sy(ground);
+    const h = hpx;
+    const w = h * spr.aspect;
+    drawDecorSprite(this.ctx, spr, px, baseY, hpx, {
       flip: opts.flip,
       bright: this.spriteBright(),
       alpha: clamp(1 - (1 - this.mood.vis / 9000) * 0.35, 0.5, 1),
     });
+    // fade distant scenery into the horizon
+    const haze = this.decorHaze(wx);
+    if (haze.a > 0.02) {
+      this.ctx.globalAlpha = haze.a;
+      this.ctx.fillStyle = haze.col;
+      this.ctx.fillRect(px - w / 2, baseY - h, w, h);
+      this.ctx.globalAlpha = 1;
+    }
     return true;
   }
 
@@ -572,6 +595,22 @@ export class Renderer {
     const { cam } = this;
     const z = cam.zoom;
     if (z < 0.5) return;
+    // lighthouses: on headlands where the sea meets rising ground
+    const lstep = 2100;
+    for (let i = Math.floor(x0 / lstep) - 1; i <= Math.floor(x1 / lstep) + 1; i++) {
+      if (hash(i * 7.1 + 23) < 0.62) continue;
+      const wx = (i + hash(i * 5.5)) * lstep;
+      const h = terrainHeight(wx, sim.mode);
+      const back = terrainHeight(wx + 120, sim.mode);
+      if (h < 8 || h > 60) continue;
+      if (back < h + 25) continue; // must be a promontory, not a beach
+      if (airportAt(wx, 800)) continue;
+      const ok = this.decor('lighthouse', wx, 26, sim.mode, { ground: h });
+      if (ok && this.tod.night) {
+        const on = Math.floor(sim.time * 0.5) % 2 === 0;
+        this.glowDot(this.sx(wx), this.sy(h) - 25 * this.cam.zoom, 14, on ? [255, 240, 190] : [120, 120, 110], on ? 0.85 : 0.2);
+      }
+    }
     // telecom masts: one every few km on high-ish ground
     const mstep = 2600;
     for (let i = Math.floor(x0 / mstep) - 1; i <= Math.floor(x1 / mstep) + 1; i++) {
@@ -620,11 +659,20 @@ export class Renderer {
       const spr = decorSprite(DECOR[conifer ? 'pine' : 'oak']);
       if (spr) {
         // sprites are a bit taller than the old vector trees: keep the same footprint
-        drawDecorSprite(ctx, spr, px, py, ht * 1.35 * z, {
+        const th = ht * 1.35 * z;
+        const tw = th * spr.aspect;
+        drawDecorSprite(ctx, spr, px, py, th, {
           bright: this.spriteBright(),
           flip: hash(i * 9.1) > 0.5,
           alpha: clamp(1 - (1 - this.mood.vis / 9000) * 0.35, 0.5, 1),
         });
+        const haze = this.decorHaze(wx);
+        if (haze.a > 0.02) {
+          ctx.globalAlpha = haze.a;
+          ctx.fillStyle = haze.col;
+          ctx.fillRect(px - tw / 2, py - th, tw, th);
+          ctx.globalAlpha = 1;
+        }
         continue;
       }
       if (conifer) {
@@ -676,14 +724,28 @@ export class Renderer {
         const hh = 4 + hash(vi * 9 + j * 2.3) * 3;
         const px = this.sx(wx);
         const py = this.sy(h);
-        const hspr = decorSprite(DECOR.house);
+        // bigger settlements get apartment blocks and the odd barn
+        const townish = hash(vi * 4.7) > 0.45;
+        const hpick = hash(vi * 6.1 + j * 2.9);
+        const hkey: DecorKey = townish ? (hpick > 0.45 ? 'block' : 'house') : hpick > 0.75 ? 'barn' : 'house';
+        const hspr = decorSprite(DECOR[hkey]);
         if (hspr) {
           // the artwork includes the roof, so it stands a bit taller than the walls
-          drawDecorSprite(ctx, hspr, px + (w / 2) * z, py, (hh + 3.2) * z, {
+          const bh = (hh + 3.2) * z * (hkey === 'block' ? 1.9 : 1);
+          const bw = bh * hspr.aspect;
+          const hx = px + (w / 2) * z;
+          drawDecorSprite(ctx, hspr, hx, py, bh, {
             bright: this.spriteBright(),
             flip: hash(vi * 3 + j * 9) > 0.5,
             alpha: clamp(1 - (1 - this.mood.vis / 9000) * 0.35, 0.5, 1),
           });
+          const haze = this.decorHaze(wx);
+          if (haze.a > 0.02) {
+            ctx.globalAlpha = haze.a;
+            ctx.fillStyle = haze.col;
+            ctx.fillRect(hx - bw / 2, py - bh, bw, bh);
+            ctx.globalAlpha = 1;
+          }
           const lightOn = night && hash(vi * 3 + j) > 0.35;
           if (lightOn) this.glowDot(px + w * 0.3 * z, py - hh * 0.6 * z, 5 * z, [255, 214, 120], 0.55);
           continue;

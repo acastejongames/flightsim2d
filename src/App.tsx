@@ -3,6 +3,7 @@ import Menu from './components/Menu';
 import GameView from './components/GameView';
 import Hangar from './components/Hangar';
 import Debrief from './components/Debrief';
+import SpriteLab from './components/SpriteLab';
 import type { SimSettings } from './game/sim';
 import { generateMission } from './game/missions';
 import type { Mission } from './game/missions';
@@ -13,7 +14,7 @@ import { setLang } from './game/i18n';
 import { loadSandbox, saveSandbox } from './game/sandbox';
 import type { SandboxTune } from './game/sandbox';
 
-type Screen = 'menu' | 'game' | 'hangar' | 'debrief';
+type Screen = 'menu' | 'game' | 'hangar' | 'debrief' | 'spritelab';
 
 export default function App() {
   const [profile, setProfile] = useState<Profile>(() => loadProfile());
@@ -109,6 +110,10 @@ export default function App() {
     );
   }
 
+  if (screen === 'spritelab') {
+    return <SpriteLab onBack={() => setScreen('menu')} />;
+  }
+
   if (screen === 'hangar') {
     return (
       <Hangar
@@ -154,6 +159,7 @@ export default function App() {
       }}
       sandbox={sandbox}
       onSandbox={changeSandbox}
+      onSpriteLab={() => setScreen('spritelab')}
     />
   );
 }

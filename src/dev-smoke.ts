@@ -231,5 +231,80 @@ console.log('\n== Sandbox (free play) ==');
   check('stored tuner is sanitised', wild.wx <= 18 && wild.vis >= 200 && wild.tod === 'day' && wild.weather === 'clear', JSON.stringify(wild).slice(0, 80));
 }
 
+
+// ---------------------------------------------------------------- flight helpers
+console.log('\n== Flight helpers ==');
+{
+  const profile = emptyProfile();
+  const spec = applyUpgrades(getAircraft('corsair'), profile);
+  const idle: Input = { pitch: 0, thr: 0, brake: false, rudder: 0 };
+
+  // --- sharper turn: a reversal must be crisp
+  {
+    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+    sim.u = spec.vCruise;
+    sim.vy = 0;
+    const hdg0 = sim.hdg;
+    let t = 0;
+    for (let i = 0; i < 20 * 60 && sim.hdg === hdg0; i++) {
+      sim.update(1 / 60, { ...idle, turn: true });
+      t += 1 / 60;
+    }
+    check('turn completes quickly', sim.hdg !== hdg0 && t < 3, `${t.toFixed(2)} s at ${Math.round(sim.ias)} m/s`);
+    check('holding turn keeps reversing', sim.hdg !== hdg0, `hdg ${hdg0} → ${sim.hdg}`);
+  }
+
+  // --- autopilot altitude hold with the assist off
+  {
+    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+    sim.u = spec.vCruise;
+    sim.vy = 0;
+    sim.assist = false;
+    sim.airTime = 60;
+    sim.y += 90; // start 90 m high and let the autopilot fly back down
+    const target = sim.y - 90;
+    sim.altHold = target;
+    let minY = 9e9;
+    let maxY = -9e9;
+    for (let i = 0; i < 30 * 60; i++) {
+      sim.update(1 / 60, { ...idle, thr: 0 });
+      minY = Math.min(minY, sim.y);
+      maxY = Math.max(maxY, sim.y);
+    }
+    check('alt hold captures the altitude', Math.abs(sim.y - target) < 40, `now ${(sim.y - target).toFixed(1)} m off target, band ${(maxY - minY).toFixed(0)} m`);
+    check('alt hold is on', sim.altHold !== null, `altHold=${sim.altHold === null ? 'off' : 'on'}`);
+  }
+
+  // --- landing guidance points down the right glidepath
+  {
+    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+    const ap = getAirport(0);
+    const thr = ap.x - ap.len / 2;
+    const dist = 2600;
+    sim.x = thr - dist;
+    sim.hdg = 1;
+    const deg = Math.tan(3 * (Math.PI / 180));
+    sim.y = ap.elev + dist * deg;
+    const g = sim.glidepath();
+    check('glidepath is found', !!g, g ? `${g.name} ${Math.round(g.dist)} m out` : 'null');
+    check('on-path reads as centred', !!g && Math.abs(g.dev) < 6, g ? `${g.dev.toFixed(1)} m dev` : '—');
+    if (g) sim.y = g.ideal + 90;
+    const high = sim.glidepath();
+    check('too high reads positive', !!high && high.dev > 40, high ? `${high.dev.toFixed(0)} m high` : '—');
+  }
+
+  // --- aerobatic smoke emits a trail
+  {
+    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+    sim.u = spec.vCruise;
+    const before = sim.particles.length;
+    sim.toggleSmoke();
+    for (let i = 0; i < 60; i++) sim.update(1 / 60, { ...idle, thr: 0.3 });
+    check('smoke trail is emitted', sim.smokeOn && sim.particles.length > before, `${sim.particles.length} particles`);
+    sim.toggleSmoke();
+    check('smoke can be switched off', !sim.smokeOn, 'off');
+  }
+}
+
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);
 if (failures > 0) process.exit(1);

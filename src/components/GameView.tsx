@@ -90,6 +90,8 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
   const [missionDone, setMissionDone] = useState(false);
   const [missionFailed, setMissionFailed] = useState(false);
   const [tune, setTune] = useState<SandboxTune>(() => ({ ...(settings.sandbox ?? SANDBOX_DEFAULT) }));
+  const [warp, setWarp] = useState(1);
+  const warpRef = useRef(1);
   const [showTuner, setShowTuner] = useState(false);
 
   const setPaused = useCallback((p: boolean) => {
@@ -172,6 +174,19 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
         case 'KeyY':
           sim.toggleAssist();
           break;
+        case 'KeyO':
+          sim.toggleAltHold();
+          break;
+        case 'KeyV':
+          sim.toggleSmoke();
+          break;
+        case 'KeyN': {
+          const next = warpRef.current >= 4 ? 1 : warpRef.current * 2;
+          warpRef.current = next;
+          setWarp(next);
+          sim.say(`TIME ×${next}`, 'info', next > 1 ? t('timeWarp') : '', 1.6);
+          break;
+        }
         case 'KeyK':
           sim.toggleAutoThrottle();
           break;
@@ -249,8 +264,11 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       input.thr = (tu ? 1 : 0) - (td ? 1 : 0);
       input.brake = keys.has('KeyB') || tc.brake;
       input.rudder = (keys.has('KeyL') || tc.rudR ? 1 : 0) - (keys.has('KeyJ') || tc.rudL ? 1 : 0);
+      input.turn = keys.has('KeyT');
       if (!pausedRef.current) {
-        sim.update(dt, input);
+        // time warp runs the sim several times per frame so the physics stays exact
+        const steps = warpRef.current;
+        for (let i = 0; i < steps; i++) sim.update(dt, input);
         audio.update(sim);
       }
       if (wasAlive && !sim.alive) {
@@ -268,6 +286,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       }
       extra.paused = pausedRef.current;
       extra.muted = mutedRef.current;
+      extra.warp = warpRef.current;
       rend.frame(sim, pausedRef.current ? 0.0001 : dt, extra);
       raf = requestAnimationFrame(loop);
     };
@@ -361,6 +380,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             {actBtn('HOOK', (s) => s.toggleHook())}
             {actBtn('TURN', (s) => s.startTurn())}
             {actBtn('LAUNCH', (s) => s.launch())}
+            {actBtn('AP', (s) => s.toggleAltHold())}
+            {actBtn('SMOKE', (s) => s.toggleSmoke())}
+            {actBtn('TIME', () => setWarp((w) => { const n = w >= 4 ? 1 : w * 2; warpRef.current = n; return n; }))}
             {actBtn('RESET', (s) => s.respawn())}
             {touchBtn('rudL', '◀ R', '!px-3 !py-2 !text-xs !rounded-xl')}
             {touchBtn('rudR', 'R ▶', '!px-3 !py-2 !text-xs !rounded-xl')}
@@ -605,6 +627,17 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                 </div>
               </div>
             )}
+            <div className="mb-4 flex flex-wrap gap-2 text-[11px] font-bold">
+              <span className={`rounded-lg px-2 py-1 ${simRef.current?.altHold !== null ? 'bg-emerald-400/20 text-emerald-200' : 'bg-white/5 text-slate-400'}`}>
+                O · {t('altHold')}
+              </span>
+              <span className={`rounded-lg px-2 py-1 ${simRef.current?.smokeOn ? 'bg-pink-400/20 text-pink-200' : 'bg-white/5 text-slate-400'}`}>
+                V · {t('smoke')}
+              </span>
+              <span className={`rounded-lg px-2 py-1 ${warp > 1 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/5 text-slate-400'}`}>
+                N · {t('timeWarp')} ×{warp}
+              </span>
+            </div>
             <Controls compact />
           </div>
         </div>

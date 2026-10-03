@@ -171,6 +171,18 @@ const DICT: Record<string, Entry> = {
     es: 'Vuelo sandbox: sin créditos, XP ni medallas. De todos modos lo tienes todo desbloqueado.',
   },
   cheats: { en: 'Sandbox cheats', es: 'Trucos del sandbox' },
+  // --- in-flight helpers
+  altHold: { en: 'Alt hold', es: 'Altitud fija' },
+  smoke: { en: 'Smoke', es: 'Humo' },
+  timeWarp: { en: 'Time', es: 'Tiempo' },
+  glideTitle: { en: 'GLIDEPATH', es: 'SENDA DE PLANEO' },
+  glideHigh: { en: 'HIGH', es: 'ALTO' },
+  glideLow: { en: 'LOW', es: 'BAJO' },
+  glideOnPath: { en: 'ON PATH', es: 'EN SENDA' },
+  glideHint: {
+    en: 'Keep the diamond centred: 3° down, gear and flaps out, sink under 2 m/s.',
+    es: 'Mantén el rombo centrado: 3° de descenso, tren y flaps fuera, descenso bajo 2 m/s.',
+  },
   addMoney: { en: '+10.000 cr', es: '+10.000 cr' },
   addXp: { en: '+5.000 XP', es: '+5.000 XP' },
   unlockAll: { en: 'Unlock everything', es: 'Desbloquear todo' },

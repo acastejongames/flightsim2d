@@ -189,7 +189,10 @@ export class Renderer {
   private updateCamera(sim: Sim, dt: number): void {
     const cam = this.cam;
     const spd = sim.tas;
-    const target = clamp(4.4 / (1 + Math.pow(spd / 80, 1.15)), 0.85, 4.4) * this.userZoom;
+    // Zoom follows the aircraft: fast jets pull the camera back, but the scale
+    // never collapses so far that the airframe disappears. `userZoom` (+/− or the
+    // wheel) multiplies everything, including the size of the aircraft itself.
+    const target = clamp(4.2 / (1 + Math.pow(spd / 110, 1.05)), 1.7, 4.2) * this.userZoom;
     if (!this.initCam) {
       cam.zoom = target;
       this.initCam = true;
@@ -1164,13 +1167,27 @@ export class Renderer {
     const c = sim.cEff();
     const sgn = c >= 0 ? 1 : -1;
     const sxScale = sgn * Math.max(Math.abs(c), 0.16);
-    const vis = Math.max(1, 48 / (s.length * z));
+    // landing light: a soft cone thrown ahead of the nose at night
+    if (this.tod.night && sim.alive && sim.gear > 0.5 && c > 0) {
+      const reach = clamp(46 * z, 60, 520);
+      const cyy = py - 8;
+      const grd = ctx.createLinearGradient(px, cyy, px + reach, cyy + reach * Math.tan(sim.p) + 30);
+      grd.addColorStop(0, 'rgba(255,246,214,0.28)');
+      grd.addColorStop(1, 'rgba(255,246,214,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.moveTo(px + 6, cyy);
+      ctx.lineTo(px + reach, cyy + reach * Math.tan(sim.p) - reach * 0.16 + 30);
+      ctx.lineTo(px + reach, cyy + reach * Math.tan(sim.p) + reach * 0.16 + 30);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.save();
     ctx.translate(px, py);
     ctx.scale(sxScale, 1);
     ctx.rotate(-sim.p);
     if (sim.turning && sim.turnKind === 'air') ctx.rotate(0);
-    ctx.scale(z * vis, -z * vis);
+    ctx.scale(z, -z);
     const dark = sim.alive ? 1 : 0.35;
     drawAircraft(ctx, s, {
       gear: s.fixedGear ? 1 : sim.gear,

@@ -60,6 +60,8 @@ export interface Input {
   thr: number;
   brake: boolean;
   rudder: number;
+  /** held down: keeps reversing the heading as soon as a turn finishes */
+  turn?: boolean;
 }
 
 export interface SimSettings {
@@ -84,6 +86,16 @@ interface Aero {
   V: number;
   gamma: number;
   alpha: number;
+}
+
+/** HSL → 0..255 RGB, used for the aerobatic smoke colours. */
+function hslToRgb(h: number, sat: number, l: number): [number, number, number] {
+  const f = (n: number) => {
+    const k = (n + h * 12) % 12;
+    const a = sat * Math.min(l, 1 - l);
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1))));
+  };
+  return [f(0), f(8), f(4)];
 }
 
 function liftCoef(alpha: number, CLa: number, a0: number, aS: number): { cl: number; stall: number } {
@@ -174,6 +186,13 @@ export class Sim {
   private excursionTimer = 0;
   damage = 0; // accumulated airframe damage 0..1
   private lastDamageSaid = 0;
+
+  // ---- helpers: autopilot, aerobatic smoke
+  /** altitude the autopilot is holding (m) or null when off */
+  altHold: number | null = null;
+  /** aerobatic smoke on/off */
+  smokeOn = false;
+  private smokeT = 0;
 
   // ---- sandbox / free play
   sandbox: SandboxTune | null = null;
@@ -524,6 +543,14 @@ export class Sim {
   }
 
   startTurn(): void {
+    this.tryTurn(false);
+  }
+
+  /**
+   * Begin a heading reversal. `silent` is used when the key is simply being held
+   * down, so we do not spam the message log with reasons we cannot turn yet.
+   */
+  private tryTurn(silent: boolean): void {
     if (!this.alive || this.turning) return;
     if (this.grounded) {
       if (this.carrier && this.surfaceAt(this.x).kind === 'deck') return this.say('Cannot turn around on the flight deck', 'warn');
@@ -531,16 +558,47 @@ export class Sim {
       this.turning = true;
       this.turnKind = 'ground';
       this.turnT = 0;
-      this.turnDur = 1.4;
+      this.turnDur = 1.0;
       this.u = 0;
       return;
     }
-    if (this.ias < 1.25 * this.spec.vs) return this.say('Too slow to turn — add speed', 'warn');
-    if (Math.cos(this.p) < 0.5) return this.say('Level out before turning', 'warn');
+    if (this.ias < 1.25 * this.spec.vs) {
+      if (!silent) this.say('Too slow to turn — add speed', 'warn');
+      return;
+    }
+    if (Math.cos(this.p) < 0.5) {
+      if (!silent) this.say('Level out before turning', 'warn');
+      return;
+    }
     this.turning = true;
     this.turnKind = 'air';
     this.turnT = 0;
-    this.turnDur = 2.8;
+    // a reversal is much crisper than it used to be, and fast jets still carve
+    // wider arcs than slow ones
+    this.turnDur = clamp(2.3 - this.ias * 0.014, 1.05, 2.3);
+  }
+
+  /** Autopilot: capture the current altitude and hold it. */
+  toggleAltHold(): void {
+    if (this.altHold !== null) {
+      this.altHold = null;
+      this.say(t2('ALT HOLD OFF', 'ALTITUD FIJADA OFF'), 'info', '', 2);
+      return;
+    }
+    if (this.grounded) return this.say(t2('Take off first', 'Despega primero'), 'warn');
+    this.altHold = this.y;
+    this.say(t2('ALT HOLD', 'ALTITUD FIJADA'), 'good', t2(`${Math.round(this.agl)} m AGL`, `${Math.round(this.agl)} m AGL`), 2.5);
+  }
+
+  /** Aerobatic smoke trail on/off. */
+  toggleSmoke(): void {
+    this.smokeOn = !this.smokeOn;
+    this.say(
+      this.smokeOn ? t2('SMOKE ON', 'HUMO ON') : t2('SMOKE OFF', 'HUMO OFF'),
+      'info',
+      t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
+      2.5,
+    );
   }
 
   launch(): void {
@@ -606,6 +664,33 @@ export class Sim {
     }
     this.updateParticles(dt);
     this.emitEffects(dt);
+  }
+
+  /**
+   * Landing guidance: where the ideal 3° glidepath to the nearest runway
+   * threshold (or the carrier deck) is. Returns null when nothing is in range.
+   */
+  glidepath(): { name: string; dist: number; ideal: number; dev: number } | null {
+    const deg = Math.tan((this.mode === 'carrier' ? 3.5 : 3) * (Math.PI / 180));
+    if (this.carrier) {
+      const thr = this.carrier.x;
+      const dist = this.x - thr;
+      if (dist < -200 || dist > 9000) return null;
+      const ideal = DECK_H + 2 + Math.max(0, dist) * deg;
+      return { name: 'CARRIER', dist: Math.max(0, dist), ideal, dev: this.y - ideal };
+    }
+    let best: { name: string; dist: number; ideal: number; dev: number } | null = null;
+    for (const ap of airportsNear(this.x, 1)) {
+      for (const sign of [-1, 1]) {
+        const thr = ap.x + (sign * ap.len) / 2;
+        const dist = (thr - this.x) * this.hdg;
+        if (dist < 60 || dist > 7000) continue;
+        const ideal = ap.elev + this.spec.gearH * 0.6 + dist * deg;
+        const cand = { name: ap.name, dist, ideal, dev: this.y - ideal };
+        if (!best || dist < best.dist) best = cand;
+      }
+    }
+    return best;
   }
 
   /** Weather, hazards, mission progress and career bookkeeping, once per frame. */
@@ -744,8 +829,20 @@ export class Sim {
   private controls(h: number): void {
     const s = this.spec;
     const inp = this.input;
-    const rate = Math.abs(inp.pitch) > 0.01 ? 3 : 4;
-    this.elev += clamp(inp.pitch - this.elev, -rate * h, rate * h);
+    // holding the turn key chains one reversal after another
+    if (inp.turn && !this.turning) this.tryTurn(true);
+
+    // autopilot altitude hold: fly the pitch to kill the height and sink errors
+    let pitchCmd = inp.pitch;
+    if (this.altHold !== null) {
+      if (this.grounded) this.altHold = null;
+      else {
+        const err = this.altHold - this.y;
+        pitchCmd = clamp(err * 0.02 - this.vy * 0.12, -1, 1);
+      }
+    }
+    const rate = Math.abs(pitchCmd) > 0.01 ? 3 : 4;
+    this.elev += clamp(pitchCmd - this.elev, -rate * h, rate * h);
 
     if (this.autoThr && this.grounded) this.autoThr = false;
     if (this.autoThr) {
@@ -1542,6 +1639,13 @@ export class Sim {
       // wingtip vortices
       if (!this.grounded && this.g > 4.2 && this.tas > 90) {
         this.addParticle('trail', this.x - c * 1.5, this.y - 0.2, 0, 0, 1.6, 0.35, 0.8, [255, 255, 255]);
+      }
+      // aerobatic smoke: a cycling colour trail from the tail
+      if (this.smokeOn) {
+        this.smokeT += 0.03;
+        const hue = (this.smokeT * 60) % 360;
+        const col = hslToRgb(hue / 360, 0.85, 0.6);
+        this.addParticle('smoke', tx, ty, -c * 1.5, 0.2, 2.4, 0.5, 2.6, col);
       }
       // exhaust haze
       if (s.kind === 'prop' && this.thrust > 0.7 && Math.random() < 0.4) {

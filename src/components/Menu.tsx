@@ -59,9 +59,10 @@ interface Props {
   onHangar: () => void;
   sandbox: SandboxTune;
   onSandbox: (t: SandboxTune) => void;
+  onSpriteLab: () => void;
 }
 
-export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }: Props) {
+export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, onSpriteLab }: Props) {
   const lang = useLang();
   const [mode, setMode] = useState<WorldMode>(profile.mode);
   const [acId, setAcId] = useState<AircraftId>(profile.aircraft);
@@ -148,6 +149,13 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }:
                 </button>
               ))}
             </div>
+            <button
+              onClick={onSpriteLab}
+              title={t2('Preview the aircraft renderer at scale', 'Ver el renderizador de aviones a escala')}
+              className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold ring-1 ring-white/15 transition hover:bg-white/20"
+            >
+              🎨 {t2('Sprite lab', 'Sprites')}
+            </button>
             <button
               onClick={() => setShowCtl((s) => !s)}
               className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold ring-1 ring-white/15 transition hover:bg-white/20"

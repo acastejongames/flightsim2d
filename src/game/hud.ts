@@ -9,6 +9,8 @@ export interface HudExtra {
   fps: number;
   muted: boolean;
   showHelp: boolean;
+  /** time acceleration in force (1 = real time) */
+  warp?: number;
 }
 
 /** radar echoes are recomputed a few times per second, not every frame */
@@ -376,6 +378,78 @@ function weatherPanel(ctx: CanvasRenderingContext2D, W: number, y0: number, sim:
   ctx.fillText(`${(sim.spec.radarKm ?? 6).toFixed(0)} km`, rx + rw - 34, ry + rh - 3);
 }
 
+/**
+ * Landing guidance: how far above or below the ideal glidepath you are, and how
+ * far the threshold is. Drawn above the wind strip while you are on approach.
+ */
+function glidePanel(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim): void {
+  if (!sim.alive || sim.grounded) return;
+  const g = sim.glidepath();
+  if (!g) return;
+  const lowWork = sim.gearCmd > 0.5 || sim.agl < 650;
+  if (!lowWork) return;
+  const pw = Math.min(W - 28 - 260, 600);
+  const left = 14 + pw + 10;
+  const right = W - 258 - 10;
+  const avail = right - left;
+  if (avail < 150) return;
+  const w = Math.min(260, avail);
+  const x = left + (avail - w) / 2;
+  const h = 64;
+  const y = H - 146 - h - 8;
+  if (y < 60) return;
+  panel(ctx, x, y, w, h);
+  label(ctx, `${t('glideTitle')} · ${g.name.slice(0, 18).toUpperCase()}`, x + 12, y + 18);
+
+  // deviation tape: +60 m (high) .. -60 m (low)
+  const bx = x + 12;
+  const by = y + 26;
+  const bw = 26;
+  const bh = 30;
+  const cx = bx + bw / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  rr(ctx, bx, by, bw, bh, 5);
+  ctx.fill();
+  // on-path window
+  ctx.fillStyle = 'rgba(125,255,166,0.18)';
+  const half = bh / 2;
+  ctx.fillRect(bx, by + half - 4, bw, 8);
+  ctx.strokeStyle = 'rgba(125,255,166,0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(bx, by + half);
+  ctx.lineTo(bx + bw, by + half);
+  ctx.stroke();
+  const dev = clamp(g.dev, -60, 60);
+  const dy = by + half - (dev / 60) * (half - 4);
+  const col = Math.abs(g.dev) < 14 ? '#7dffa6' : Math.abs(g.dev) < 40 ? '#ffc65a' : '#ff6b5e';
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(cx, dy - 6);
+  ctx.lineTo(cx + 6, dy);
+  ctx.lineTo(cx, dy + 6);
+  ctx.lineTo(cx - 6, dy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = `600 9px ${MONO}`;
+  ctx.fillStyle = 'rgba(200,215,235,0.75)';
+  ctx.textAlign = 'left';
+  ctx.fillText('+60', bx + bw + 3, by + 8);
+  ctx.fillText('0', bx + bw + 3, by + half + 3);
+  ctx.fillText('−60', bx + bw + 3, by + bh);
+
+  const tx = bx + bw + 26;
+  ctx.font = `800 13px ${SANS}`;
+  ctx.fillStyle = col;
+  const state = Math.abs(g.dev) < 14 ? t('glideOnPath') : g.dev > 0 ? t('glideHigh') : t('glideLow');
+  ctx.fillText(state, tx, y + 40);
+  ctx.font = `600 11px ${MONO}`;
+  ctx.fillStyle = 'rgba(200,215,235,0.9)';
+  const dist = g.dist < 1000 ? `${Math.round(g.dist / 10) * 10} m` : `${(g.dist / 1000).toFixed(1)} km`;
+  ctx.fillText(`${t2('TO THR', 'A UMBRAL')} ${dist}  ·  ${g.dev >= 0 ? '+' : '−'}${Math.abs(Math.round(g.dev))} m`, tx, y + 56);
+
+}
+
 /** Wind + centreline strip under the aircraft, bottom centre. */
 function windStrip(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim): void {
   const pw = Math.min(W - 28 - 260, 600);
@@ -456,7 +530,7 @@ function windStrip(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim
   void H;
 }
 
-function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: number): void {
+function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: number, warp = 1): void {
   const items: { txt: string; col: string }[] = [];
   if (sim.ice > 0.05) items.push({ txt: `${t2('ICE', 'HIELO')} ${Math.round(sim.ice * 100)}%`, col: '#9fe8ff' });
   if (sim.damage > 0.05) items.push({ txt: `${t2('DMG', 'DAÑO')} ${Math.round(sim.damage * 100)}%`, col: '#ffc65a' });
@@ -465,6 +539,9 @@ function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: numb
   if (sim.mission && sim.mission.status === 'done') items.push({ txt: t2('CONTRACT DONE', 'CONTRATO OK'), col: '#7dffa6' });
   if (sim.mission && sim.mission.status === 'failed') items.push({ txt: t2('CONTRACT FAILED', 'CONTRATO FALLIDO'), col: '#ff6b5e' });
   if (sim.sandbox?.on) items.push({ txt: t2('SANDBOX · U', 'SANDBOX · U'), col: '#7ef0c0' });
+  if (sim.altHold !== null) items.push({ txt: `AP ALT · O`, col: '#7dffa6' });
+  if (sim.smokeOn) items.push({ txt: t2('SMOKE ON', 'HUMO ON'), col: '#ff9ad5' });
+  if (warp > 1) items.push({ txt: `TIME ×${warp}`, col: '#ffd24a' });
   if (!items.length) return;
   let x = W / 2;
   const totalW = items.reduce((a, i) => a + i.txt.length * 6.4 + 18, 0);
@@ -642,8 +719,11 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
   // ---------------- weather panel
   weatherPanel(ctx, W, 14 + 34 + Math.min(3, sim.mode === 'carrier' ? 1 : 3) * 22 + 10, sim);
 
+  // ---------------- landing guidance
+  glidePanel(ctx, W, H, sim);
+
   // ---------------- hazard chips
-  hazardChips(ctx, W, sim, H - 30);
+  hazardChips(ctx, W, sim, H - 30, extra.warp ?? 1);
 
   // ---------------- flight instrument panel
   const pw = Math.min(W - 28 - 260, 600);

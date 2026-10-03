@@ -171,6 +171,11 @@ const DICT: Record<string, Entry> = {
     es: 'Vuelo sandbox: sin créditos, XP ni medallas. De todos modos lo tienes todo desbloqueado.',
   },
   cheats: { en: 'Sandbox cheats', es: 'Trucos del sandbox' },
+  version: { en: 'v2 · weather & career', es: 'v2 · clima y carrera' },
+  tailhook: { en: 'Tailhook', es: 'Gancho' },
+  noCarrier: { en: 'Land based', es: 'Base terrestre' },
+  on: { en: 'On', es: 'Sí' },
+  off: { en: 'Off', es: 'No' },
   // --- flight feel
   feelTitle: { en: '7 · Flight feel', es: '7 · Sensación de vuelo' },
   turnAmount: { en: 'Turn amount', es: 'Cantidad de giro' },

@@ -30,7 +30,7 @@ export default function Controls({ compact = false }: { compact?: boolean }) {
     <div className={`grid gap-x-6 gap-y-1.5 ${compact ? 'text-xs' : 'text-sm'} sm:grid-cols-1`}>
       {ROWS.map(([k, en, es]) => (
         <div key={k} className="flex items-baseline gap-3">
-          <span className="w-40 shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-center font-mono text-[11px] font-semibold text-sky-100 ring-1 ring-white/10">
+          <span className="w-40 shrink-0 bg-white/10 px-2 py-0.5 text-center font-mono text-[11px] font-semibold text-sky-100 ring-1 ring-white/10">
             {k}
           </span>
           <span className="text-slate-300">{t2(en, es)}</span>

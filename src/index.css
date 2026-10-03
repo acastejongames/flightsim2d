@@ -17,3 +17,40 @@ body {
 canvas {
   touch-action: none;
 }
+
+/* ------------------------------------------------------------------ theme
+   Instrument-panel look: hairline accents, typewriter labels and a faint
+   scanline + vignette overlay so the artwork sits under a glass canopy. */
+.tech-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.07) 0px,
+    rgba(255, 255, 255, 0.07) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+.tech-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, transparent 35%, rgba(2, 6, 23, 0.72) 100%);
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.35);
+}
+
+input[type='range'] {
+  accent-color: #38bdf8;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 1px solid rgba(125, 211, 252, 0.8);
+  outline-offset: 1px;
+}

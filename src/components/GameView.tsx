@@ -306,7 +306,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
   const touchBtn = (key: TouchKey, label: string, cls = '') => (
     <button
- className={`select-none touch-none rounded-sm bg-white/15 px-4 py-3 text-lg font-bold text-white ring-1 ring-white/25 active:bg-white/35 ${cls}`}
+ className={`select-none touch-none bg-white/15 px-4 py-3 text-lg font-bold text-white ring-1 ring-white/25 active:bg-white/35 ${cls}`}
       onPointerDown={(e) => {
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
         touchRef.current[key] = true;
@@ -319,7 +319,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
   );
   const actBtn = (label: string, fn: (s: Sim) => void) => (
     <button
-    className="select-none touch-none rounded-sm bg-white/15 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/25 active:bg-white/35"
+    className="select-none touch-none bg-white/15 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/25 active:bg-white/35"
       onPointerDown={() => simRef.current && fn(simRef.current)}
     >
       {label}
@@ -337,21 +337,21 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 gap-2">
         <button
           onClick={() => setPaused(!paused)}
-          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
+          className="pointer-events-auto bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
           <Ico name={paused ? 'play' : 'pause'} size={12} />
           {paused ? t('resume') : t('pause')}
         </button>
         <button
           onClick={() => setMuted(!muted)}
-          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
+          className="pointer-events-auto bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
           <Ico name={muted ? 'mute' : 'sound'} size={15} />
         </button>
         {settings.sandbox?.on && (
           <button
             onClick={() => setShowTuner((v) => !v)}
- className={`pointer-events-auto rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 ${
+ className={`pointer-events-auto px-3.5 py-1.5 text-xs font-semibold ring-1 ${
               showTuner ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-slate-900/70 text-slate-100 ring-white/15 hover:bg-slate-800/80'
             }`}
           >
@@ -360,7 +360,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
         )}
         <button
           onClick={endFlight}
-          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
+          className="pointer-events-auto bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
           <Ico name="stop" size={11} className="mr-1 inline -mt-0.5"/>{t('endFlight')}
         </button>
@@ -386,18 +386,18 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             {actBtn('SMOKE', (s) => s.toggleSmoke())}
             {actBtn('TIME', () => setWarp((w) => { const n = w >= 8 ? 1 : w * 2; warpRef.current = n; return n; }))}
             {actBtn('RESET', (s) => s.respawn())}
-            {touchBtn('rudL', '< R', '!px-3 !py-2 !text-xs !rounded-sm')}
-            {touchBtn('rudR', 'R >', '!px-3 !py-2 !text-xs !rounded-sm')}
-            {touchBtn('brake', 'BRK', '!px-3 !py-2 !text-xs !rounded-sm')}
+            {touchBtn('rudL', '< R', '!px-3 !py-2 !text-xs')}
+            {touchBtn('rudR', 'R >', '!px-3 !py-2 !text-xs')}
+            {touchBtn('brake', 'BRK', '!px-3 !py-2 !text-xs')}
           </div>
         </>
       )}
 
       {settings.sandbox?.on && showTuner && (
-        <div className="absolute bottom-3 right-3 top-16 z-20 w-[19.5rem] max-w-[86vw] overflow-y-auto rounded-sm bg-slate-950/85 p-3 text-slate-100 ring-1 ring-emerald-300/30 ">
+        <div className="absolute bottom-3 right-3 top-16 z-20 w-[19.5rem] max-w-[86vw] overflow-y-auto bg-slate-950/85 p-3 text-slate-100 ring-1 ring-emerald-300/30 ">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-300"><Ico name="sliders" size={12} className="mr-1 inline -mt-0.5"/>{t('tuner')}</div>
-            <button onClick={() => setShowTuner(false)} className="rounded-lg bg-white/10 px-2 py-0.5 text-xs font-bold hover:bg-white/20">
+            <button onClick={() => setShowTuner(false)} className="bg-white/10 px-2 py-0.5 text-xs font-bold hover:bg-white/20">
               <Ico name="times" size={14} />
             </button>
           </div>
@@ -410,7 +410,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                 <button
  key={w.id}
                   onClick={() => applyTune(tuneFromPreset(tune, w.id))}
- className={`rounded-lg px-1 py-1.5 text-[10px] font-bold leading-tight ring-1 ${
+ className={`px-1 py-1.5 text-[10px] font-bold leading-tight ring-1 ${
                     tune.weather === w.id ? 'bg-sky-500 text-slate-950 ring-sky-300' : 'bg-white/5 text-slate-200 ring-white/10 hover:bg-white/15'
                   }`}
                 >
@@ -428,7 +428,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                 <button
  key={id}
                   onClick={() => applyTune({ ...tune, tod: id })}
- className={`rounded-lg px-1 py-1.5 text-[10px] font-bold ring-1 ${
+ className={`px-1 py-1.5 text-[10px] font-bold ring-1 ${
                     tune.tod === id ? 'bg-amber-300 text-slate-950 ring-amber-200' : 'bg-white/5 text-slate-200 ring-white/10 hover:bg-white/15'
                   }`}
                 >
@@ -480,7 +480,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           <div className="mt-3 grid grid-cols-2 gap-1.5">
             <button
               onClick={() => applyTune({ ...tune, god: !tune.god })}
- className={`rounded-sm px-2 py-2 text-[10px] font-bold uppercase ring-1 ${
+ className={`px-2 py-2 text-[10px] font-bold uppercase ring-1 ${
                 tune.god ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/15'
               }`}
             >
@@ -488,7 +488,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             </button>
             <button
               onClick={() => applyTune({ ...tune, fuel: !tune.fuel })}
- className={`rounded-sm px-2 py-2 text-[10px] font-bold uppercase ring-1 ${
+ className={`px-2 py-2 text-[10px] font-bold uppercase ring-1 ${
                 tune.fuel ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/15'
               }`}
             >
@@ -499,13 +499,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           <div className="mt-1.5 grid grid-cols-2 gap-1.5">
             <button
               onClick={() => applyTune(tuneFromPreset({ ...SANDBOX_DEFAULT, on: tune.on, tod: tune.tod }, 'clear'))}
-              className="rounded-sm bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
+              className="bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
             >
               <Ico name="refresh" size={12} className="mr-1 inline -mt-0.5" />{t('sbReset')}
             </button>
             <button
               onClick={() => simRef.current?.respawn()}
-              className="rounded-sm bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
+              className="bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
             >
               <Ico name="plane" size={12} className="mr-1 inline -mt-0.5"/>{t('respawn')}
             </button>
@@ -532,18 +532,18 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {crashed && !paused && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
-          <div className="flex items-center gap-3 rounded-sm bg-slate-950/85 px-5 py-3 ring-1 ring-white/15 ">
+          <div className="flex items-center gap-3 bg-slate-950/85 px-5 py-3 ring-1 ring-white/15 ">
             <span className="text-sm font-bold text-red-300">{t('crashed')}</span>
             <button
               onClick={() => {
                 simRef.current?.respawn();
                 setCrashed(false);
               }}
-              className="rounded-sm bg-white/10 px-4 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
+              className="bg-white/10 px-4 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
             >
               <Ico name="refresh" size={13} className="mr-1 inline -mt-0.5"/>{t('respawn')}
             </button>
-            <button onClick={endFlight} className="rounded-sm bg-sky-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-sky-400">
+            <button onClick={endFlight} className="bg-sky-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-sky-400">
               <Ico name="stop" size={11} className="mr-1 inline -mt-0.5"/>{t('endFlight')}
             </button>
           </div>
@@ -552,9 +552,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {missionDone && !crashed && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
-          <div className="flex items-center gap-3 rounded-sm bg-emerald-950/85 px-5 py-3 ring-1 ring-emerald-300/30 ">
+          <div className="flex items-center gap-3 bg-emerald-950/85 px-5 py-3 ring-1 ring-emerald-300/30 ">
             <span className="text-sm font-bold text-emerald-200"><Ico name="check" size={14} className="mr-1 inline -mt-0.5"/>{t('missionComplete')}</span>
-            <button onClick={endFlight} className="rounded-sm bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-300">
+            <button onClick={endFlight} className="bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-300">
               {t('debrief')} →
             </button>
           </div>
@@ -563,9 +563,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {missionFailed && !crashed && !missionDone && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
-          <div className="flex items-center gap-3 rounded-sm bg-red-950/85 px-5 py-3 ring-1 ring-red-300/30 ">
+          <div className="flex items-center gap-3 bg-red-950/85 px-5 py-3 ring-1 ring-red-300/30 ">
             <span className="text-sm font-bold text-red-200"><Ico name="times" size={14} className="mr-1 inline -mt-0.5"/>{t('missionFailed')}</span>
-            <button onClick={endFlight} className="rounded-sm bg-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/25">
+            <button onClick={endFlight} className="bg-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/25">
               {t('debrief')} →
             </button>
           </div>
@@ -574,7 +574,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {paused && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/60 p-4 -sm">
-          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-md bg-slate-900/90 p-6 ring-1 ring-white/10">
+          <div className="max-h-full w-full max-w-2xl overflow-y-auto bg-slate-950/90 p-6 ring-1 ring-white/10">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-extrabold tracking-tight text-white">{t('paused')}</h2>
@@ -590,13 +590,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                     setCrashed(false);
                     setPaused(false);
                   }}
-                  className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
+                  className="bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
                 >
                   <Ico name="refresh" size={12} className="mr-1 inline -mt-0.5" />{t('respawn')}
                 </button>
                 <button
                   onClick={endFlight}
-                  className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
+                  className="bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
                 >
                   <Ico name="stop" size={11} className="mr-1 inline -mt-0.5"/>{t('endFlight')}
                 </button>
@@ -606,21 +606,21 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                       setShowTuner(true);
                       setPaused(false);
                     }}
-                    className="rounded-sm bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 ring-1 ring-emerald-300/40 hover:bg-emerald-300"
+                    className="bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 ring-1 ring-emerald-300/40 hover:bg-emerald-300"
                   >
                     <Ico name="sliders" size={12} className="mr-1 inline -mt-0.5"/>{t('tuner')}
                   </button>
                 )}
                 <button
                   onClick={() => setPaused(false)}
-                  className="rounded-sm bg-sky-500 px-5 py-2 text-sm font-bold text-slate-950 hover:bg-sky-400"
+                  className="bg-sky-500 px-5 py-2 text-sm font-bold text-slate-950 hover:bg-sky-400"
                 >
                   {t('resume')}
                 </button>
               </div>
             </div>
             {run && (
-              <div className="mb-4 rounded-sm bg-black/40 p-4 ring-1 ring-white/10">
+              <div className="mb-4 bg-black/40 p-4 ring-1 ring-white/10">
                 <div className="font-mono text-[11px] font-bold uppercase tracking-[0.3em] text-sky-300/80">{t('objective')}</div>
                 <div className="text-sm font-semibold text-sky-200">{run.objective(lang)}</div>
                 <div className="mt-1 text-xs text-slate-400">
@@ -637,13 +637,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
               </div>
             )}
             <div className="mb-4 flex flex-wrap gap-2 text-[11px] font-bold">
-              <span className={`rounded-lg px-2 py-1 ${simRef.current?.altHold !== null ? 'bg-emerald-400/20 text-emerald-200' : 'bg-white/5 text-slate-400'}`}>
+              <span className={`px-2 py-1 ${simRef.current?.altHold !== null ? 'bg-emerald-400/20 text-emerald-200' : 'bg-white/5 text-slate-400'}`}>
                 O · {t('altHold')}
               </span>
-              <span className={`rounded-lg px-2 py-1 ${simRef.current?.smokeOn ? 'bg-pink-400/20 text-pink-200' : 'bg-white/5 text-slate-400'}`}>
+              <span className={`px-2 py-1 ${simRef.current?.smokeOn ? 'bg-pink-400/20 text-pink-200' : 'bg-white/5 text-slate-400'}`}>
                 V · {t('smoke')}
               </span>
-              <span className={`rounded-lg px-2 py-1 ${warp > 1 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/5 text-slate-400'}`}>
+              <span className={`px-2 py-1 ${warp > 1 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/5 text-slate-400'}`}>
                 N · {t('timeWarp')} ×{warp}
               </span>
             </div>

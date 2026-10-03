@@ -2,15 +2,25 @@ import { useEffect, useRef } from 'react';
 import type { AircraftSpec } from '../game/aircraft';
 import { drawAircraft } from '../game/sprites';
 
-export default function AircraftPreview({ spec, className = '' }: { spec: AircraftSpec; className?: string }) {
+export default function AircraftPreview({
+  spec,
+  className = '',
+  width = 260,
+  height = 120,
+}: {
+  spec: AircraftSpec;
+  className?: string;
+  width?: number;
+  height?: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = 260;
-    const h = 120;
+    const w = width;
+    const h = height;
     cv.width = w * dpr;
     cv.height = h * dpr;
     const ctx = cv.getContext('2d');
@@ -34,7 +44,7 @@ export default function AircraftPreview({ spec, className = '' }: { spec: Aircra
       crashed: false,
     });
     ctx.restore();
-  }, [spec]);
+  }, [spec, width, height]);
 
-  return <canvas ref={ref} className={className} style={{ width: 260, height: 120 }} />;
+  return <canvas ref={ref} className={className} style={{ width, height }} />;
 }

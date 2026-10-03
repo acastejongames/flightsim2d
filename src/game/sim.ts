@@ -587,7 +587,7 @@ export class Sim {
     // wider arcs than slow ones
     // fighters snap through a reversal, heavy transports wallow through it;
     // the speed term is gentle so the turn modifier keeps a useful range
-    this.turnDur = clamp((2.6 - this.ias * 0.004) / this.sensEff, 0.55, 3.6);
+    this.turnDur = clamp((2.6 - this.ias * 0.004) / this.sensEff, 0.42, 3.6);
   }
 
   /** Autopilot: capture the current altitude and hold it. */
@@ -849,8 +849,12 @@ export class Sim {
     if (this.altHold !== null) {
       if (this.grounded) this.altHold = null;
       else {
+        // cascade: altitude error -> commanded vertical speed -> pitch. A plain
+        // proportional loop saturates on the fast jets and pitch-oscillates;
+        // this keeps the capture smooth at any cruise speed
         const err = this.altHold - this.y;
-        pitchCmd = clamp(err * 0.02 - this.vy * 0.12, -1, 1);
+        const vTarget = clamp(err * 0.3, -15, 15);
+        pitchCmd = clamp((vTarget - this.vy) * 0.22, -1, 1);
       }
     }
     // fighters are "sensitive": the servo drives the elevator harder

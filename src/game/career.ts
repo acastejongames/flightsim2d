@@ -2,6 +2,7 @@ import type { AircraftId, AircraftSpec } from './aircraft';
 import type { Lang } from './i18n';
 import type { WeatherId } from './weather';
 import type { WorldMode } from './world';
+import type { IconName } from '../components/Ico';
 
 export interface RankDef {
   xp: number;
@@ -36,14 +37,15 @@ export interface AirframeDef {
   rank: number;
 }
 
+/**
+ * The fleet is all hand-drawn art now. The PC-21 is the free starter trainer;
+ * everything else is unlocked with credits and rank.
+ */
 export const AIRFRAMES: Record<AircraftId, AirframeDef> = {
-  sparrow: { id: 'sparrow', price: 0, rank: 0 },
-  corsair: { id: 'corsair', price: 16000, rank: 2 },
-  hornet: { id: 'hornet', price: 48000, rank: 4 },
-  typhoon: { id: 'typhoon', price: 72000, rank: 5 },
-  ef18: { id: 'ef18', price: 54000, rank: 4 },
-  pc21: { id: 'pc21', price: 24000, rank: 2 },
-  cn235: { id: 'cn235', price: 38000, rank: 3 },
+  pc21: { id: 'pc21', price: 0, rank: 0 },
+  cn235: { id: 'cn235', price: 34000, rank: 2 },
+  ef18: { id: 'ef18', price: 46000, rank: 3 },
+  typhoon: { id: 'typhoon', price: 68000, rank: 4 },
 };
 
 export type UpgradeEffect = 'thrust' | 'drag' | 'brake' | 'deice' | 'radar' | 'fuel' | 'gear' | 'stab' | 'nav';
@@ -51,7 +53,7 @@ export type UpgradeEffect = 'thrust' | 'drag' | 'brake' | 'deice' | 'radar' | 'f
 export interface UpgradeDef {
   id: string;
   effect: UpgradeEffect;
-  icon: string;
+  icon: IconName;
   en: string;
   es: string;
   descEn: string;
@@ -62,47 +64,47 @@ export interface UpgradeDef {
 
 export const UPGRADES: UpgradeDef[] = [
   {
-    id: 'engine', effect: 'thrust', icon: '🔧', max: 3, cost: 2600,
+    id: 'engine', effect: 'thrust', icon: 'wrench', max: 3, cost: 2600,
     en: 'Engine tune', es: 'Puesta a punto',
     descEn: '+7% thrust per level.', descEs: '+7% de empuje por nivel.',
   },
   {
-    id: 'aero', effect: 'drag', icon: '✨', max: 3, cost: 3100,
+    id: 'aero', effect: 'drag', icon: 'wing', max: 3, cost: 3100,
     en: 'Aero clean-up', es: 'Limpieza aerodinámica',
     descEn: '-8% parasite drag per level.', descEs: '-8% de resistencia parásita por nivel.',
   },
   {
-    id: 'brakes', effect: 'brake', icon: '🛞', max: 2, cost: 2200,
+    id: 'brakes', effect: 'brake', icon: 'gauge', max: 2, cost: 2200,
     en: 'Brakes & tyres', es: 'Frenos y neumáticos',
     descEn: '+25% braking action, less tyre wear.', descEs: '+25% de frenado, menos desgaste.',
   },
   {
-    id: 'deice', effect: 'deice', icon: '🧊', max: 2, cost: 3400,
+    id: 'deice', effect: 'deice', icon: 'ice', max: 2, cost: 3400,
     en: 'De-ice system', es: 'Sistema antihielo',
     descEn: 'Removes 75% / 95% of airframe ice.', descEs: 'Elimina el 75% / 95% del hielo.',
   },
   {
-    id: 'radar', effect: 'radar', icon: '📡', max: 2, cost: 2800,
+    id: 'radar', effect: 'radar', icon: 'radar', max: 2, cost: 2800,
     en: 'Weather radar', es: 'Radar meteorológico',
     descEn: 'Longer radar range and auto alerts.', descEs: 'Más alcance y avisos automáticos.',
   },
   {
-    id: 'tanks', effect: 'fuel', icon: '⛽', max: 2, cost: 2500,
+    id: 'tanks', effect: 'fuel', icon: 'fuel', max: 2, cost: 2500,
     en: 'Aux tanks', es: 'Depósitos auxiliares',
     descEn: '+18% fuel capacity per level.', descEs: '+18% de combustible por nivel.',
   },
   {
-    id: 'gear', effect: 'gear', icon: '🦿', max: 2, cost: 3600,
+    id: 'gear', effect: 'gear', icon: 'tune', max: 2, cost: 3600,
     en: 'Reinforced gear', es: 'Tren reforzado',
     descEn: 'Tolerates a 25% harder touchdown per level.', descEs: 'Aguanta un 25% más de impacto por nivel.',
   },
   {
-    id: 'stab', effect: 'stab', icon: '🎛️', max: 2, cost: 3900,
+    id: 'stab', effect: 'stab', icon: 'sliders', max: 2, cost: 3900,
     en: 'Stability augmentation', es: 'Estabilizador de vuelo',
     descEn: 'Damps 30% / 50% of gust response.', descEs: 'Amortigua el 30% / 50% de las rachas.',
   },
   {
-    id: 'nav', effect: 'nav', icon: '🧭', max: 1, cost: 4200,
+    id: 'nav', effect: 'nav', icon: 'route', max: 1, cost: 4200,
     en: 'Nav computer', es: 'Computador de navegación',
     descEn: 'Shows wind-corrected heading and gate guidance (+10% pay).', descEs: 'Rumbo corregido por viento y guiado a puertas (+10% de paga).',
   },
@@ -121,7 +123,7 @@ export function upgradeCost(def: UpgradeDef, level: number): number {
 // ------------------------------------------------------------------ medals
 export interface MedalDef {
   id: string;
-  icon: string;
+  icon: IconName;
   en: string;
   es: string;
   descEn: string;
@@ -129,24 +131,24 @@ export interface MedalDef {
 }
 
 export const MEDALS: MedalDef[] = [
-  { id: 'first_flight', icon: '🎖️', en: 'First Flight', es: 'Primer vuelo', descEn: 'Complete your first flight.', descEs: 'Completa tu primer vuelo.' },
-  { id: 'first_landing', icon: '🛬', en: 'Greased It', es: 'Mantequilla', descEn: 'Touch down with less than 1.3 m/s sink.', descEs: 'Toma contacto con menos de 1,3 m/s.' },
-  { id: 'ten_landings', icon: '🏅', en: 'Ten Down', es: 'Diez abajo', descEn: 'Log 10 landings.', descEs: 'Suma 10 aterrizajes.' },
-  { id: 'trap_ok', icon: '⚓', en: 'Trapped', es: 'Enganchado', descEn: 'Catch a wire on the carrier.', descEs: 'Engancha un cable en el portaaviones.' },
-  { id: 'trap_perfect', icon: '🥇', en: 'OK 3-Wire', es: '3er cable OK', descEn: 'Grade a perfect 3-wire trap.', descEs: 'Consigue un enganche perfecto en el 3er cable.' },
-  { id: 'ten_traps', icon: '🧲', en: 'Hook Master', es: 'Maestro del gancho', descEn: '10 successful traps.', descEs: '10 enganches con éxito.' },
-  { id: 'crosswind', icon: '💨', en: 'Crabbed', es: 'Al viento', descEn: 'Land clean in a strong crosswind.', descEs: 'Aterriza limpio con viento cruzado fuerte.' },
-  { id: 'storm', icon: '⛈️', en: 'Storm Rider', es: 'Jinete de tormentas', descEn: 'Fly and land in a thunderstorm.', descEs: 'Vuela y aterriza en una tormenta.' },
-  { id: 'night', icon: '🌙', en: 'Night Owl', es: 'Nocturno', descEn: 'Land after dark.', descEs: 'Aterriza de noche.' },
-  { id: 'fog', icon: '🌫️', en: 'Blind Luck', es: 'Suerte ciega', descEn: 'Land with less than 1 km visibility.', descEs: 'Aterriza con menos de 1 km de visibilidad.' },
-  { id: 'ice', icon: '🧊', en: 'Icy Wings', es: 'Alas heladas', descEn: 'Land with airframe ice on the wings.', descEs: 'Aterriza con hielo en el avión.' },
-  { id: 'mach1', icon: '🚀', en: 'Sound Barrier', es: 'Barrera del sonido', descEn: 'Exceed Mach 1.', descEs: 'Supera Mach 1.' },
-  { id: 'g8', icon: '🌀', en: 'Eight G', es: 'Ocho G', descEn: 'Pull 8 g without breaking up.', descEs: 'Soporta 8 g sin romperte.' },
-  { id: 'century', icon: '🗺️', en: 'Centurion', es: 'Centurión', descEn: 'Fly 100 km in one flight.', descEs: 'Vuela 100 km en un vuelo.' },
-  { id: 'contractor', icon: '📋', en: 'Contractor', es: 'Contratista', descEn: 'Complete 10 contracts.', descEs: 'Completa 10 contratos.' },
-  { id: 'ace', icon: '🏆', en: 'Ace', es: 'As', descEn: 'Complete 5 contracts in a row.', descEs: 'Completa 5 contratos seguidos.' },
-  { id: 'jet', icon: '✈️', en: 'Jet Jockey', es: 'Piloto de jet', descEn: 'Buy the F/A-18 Hornet.', descEs: 'Compra el F/A-18 Hornet.' },
-  { id: 'hardcore', icon: '🔥', en: 'No Assist', es: 'Sin ayudas', descEn: 'Land with flight assist off.', descEs: 'Aterriza con la ayuda de vuelo desactivada.' },
+  { id: 'first_flight', icon: 'medal', en: 'First Flight', es: 'Primer vuelo', descEn: 'Complete your first flight.', descEs: 'Completa tu primer vuelo.' },
+  { id: 'first_landing', icon: 'plane', en: 'Greased It', es: 'Mantequilla', descEn: 'Touch down with less than 1.3 m/s sink.', descEs: 'Toma contacto con menos de 1,3 m/s.' },
+  { id: 'ten_landings', icon: 'medal', en: 'Ten Down', es: 'Diez abajo', descEn: 'Log 10 landings.', descEs: 'Suma 10 aterrizajes.' },
+  { id: 'trap_ok', icon: 'anchor', en: 'Trapped', es: 'Enganchado', descEn: 'Catch a wire on the carrier.', descEs: 'Engancha un cable en el portaaviones.' },
+  { id: 'trap_perfect', icon: 'medal', en: 'OK 3-Wire', es: '3er cable OK', descEn: 'Grade a perfect 3-wire trap.', descEs: 'Consigue un enganche perfecto en el 3er cable.' },
+  { id: 'ten_traps', icon: 'anchor', en: 'Hook Master', es: 'Maestro del gancho', descEn: '10 successful traps.', descEs: '10 enganches con éxito.' },
+  { id: 'crosswind', icon: 'crosswind', en: 'Crabbed', es: 'Al viento', descEn: 'Land clean in a strong crosswind.', descEs: 'Aterriza limpio con viento cruzado fuerte.' },
+  { id: 'storm', icon: 'storm', en: 'Storm Rider', es: 'Jinete de tormentas', descEn: 'Fly and land in a thunderstorm.', descEs: 'Vuela y aterriza en una tormenta.' },
+  { id: 'night', icon: 'night', en: 'Night Owl', es: 'Nocturno', descEn: 'Land after dark.', descEs: 'Aterriza de noche.' },
+  { id: 'fog', icon: 'fog', en: 'Blind Luck', es: 'Suerte ciega', descEn: 'Land with less than 1 km visibility.', descEs: 'Aterriza con menos de 1 km de visibilidad.' },
+  { id: 'ice', icon: 'ice', en: 'Icy Wings', es: 'Alas heladas', descEn: 'Land with airframe ice on the wings.', descEs: 'Aterriza con hielo en el avión.' },
+  { id: 'mach1', icon: 'jet', en: 'Sound Barrier', es: 'Barrera del sonido', descEn: 'Exceed Mach 1.', descEs: 'Supera Mach 1.' },
+  { id: 'g8', icon: 'gauge', en: 'Eight G', es: 'Ocho G', descEn: 'Pull 8 g without breaking up.', descEs: 'Soporta 8 g sin romperte.' },
+  { id: 'century', icon: 'map', en: 'Centurion', es: 'Centurión', descEn: 'Fly 100 km in one flight.', descEs: 'Vuela 100 km en un vuelo.' },
+  { id: 'contractor', icon: 'contract', en: 'Contractor', es: 'Contratista', descEn: 'Complete 10 contracts.', descEs: 'Completa 10 contratos.' },
+  { id: 'ace', icon: 'trophy', en: 'Ace', es: 'As', descEn: 'Complete 5 contracts in a row.', descEs: 'Completa 5 contratos seguidos.' },
+  { id: 'jet', icon: 'jet', en: 'Jet Jockey', es: 'Piloto de jet', descEn: 'Buy the F/A-18 Hornet.', descEs: 'Compra el F/A-18 Hornet.' },
+  { id: 'hardcore', icon: 'flame', en: 'No Assist', es: 'Sin ayudas', descEn: 'Land with flight assist off.', descEs: 'Aterriza con la ayuda de vuelo desactivada.' },
 ];
 
 export const MEDAL_BY_ID: Record<string, MedalDef> = MEDALS.reduce((a, m) => ((a[m.id] = m), a), {} as Record<string, MedalDef>);
@@ -189,12 +191,12 @@ export const emptyProfile = (): Profile => ({
   v: 1,
   xp: 0,
   money: 3500,
-  owned: ['sparrow'],
+  owned: ['pc21'],
   upgrades: {},
   medals: [],
   weather: 'clear',
   mode: 'open',
-  aircraft: 'sparrow',
+  aircraft: 'pc21',
   lang: 'en',
   stats: {
     flights: 0,
@@ -220,19 +222,34 @@ export const emptyProfile = (): Profile => ({
 
 const KEY = 'skybound.profile.v1';
 
+const FLEET: AircraftId[] = ['pc21', 'cn235', 'ef18', 'typhoon'];
+/** Old saves referred to the retired vector aircraft; map them onto the fleet. */
+const LEGACY_AIRCRAFT: Record<string, AircraftId> = {
+  sparrow: 'pc21',
+  corsair: 'ef18',
+  hornet: 'ef18',
+};
+
 export function loadProfile(): Profile {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return emptyProfile();
     const p = JSON.parse(raw) as Profile;
     const base = emptyProfile();
+    const owned = (Array.isArray(p.owned) ? p.owned : [])
+      .map((id) => (FLEET.includes(id) ? id : LEGACY_AIRCRAFT[id as string]))
+      .filter((id): id is AircraftId => !!id);
+    const ownedSet = Array.from(new Set(owned));
+    if (!ownedSet.includes('pc21')) ownedSet.unshift('pc21'); // the free trainer is always available
+    const wanted = FLEET.includes(p.aircraft) ? p.aircraft : LEGACY_AIRCRAFT[p.aircraft as string];
     return {
       ...base,
       ...p,
       stats: { ...base.stats, ...(p.stats ?? {}) },
       upgrades: { ...(p.upgrades ?? {}) },
       medals: Array.isArray(p.medals) ? p.medals : [],
-      owned: Array.isArray(p.owned) && p.owned.length ? p.owned : ['sparrow'],
+      owned: ownedSet,
+      aircraft: wanted && ownedSet.includes(wanted) ? wanted : 'pc21',
     };
   } catch {
     return emptyProfile();
@@ -411,7 +428,7 @@ export function award(profile: Profile, s: FlightSummary): AwardResult {
   candidate('century', s.distance >= 100000);
   candidate('contractor', st.missions >= 10);
   candidate('ace', st.bestStreak >= 5);
-  candidate('jet', profile.owned.includes('hornet'));
+  candidate('jet', profile.owned.some((id) => id === 'ef18' || id === 'typhoon'));
   candidate('hardcore', !s.assist && s.landings > 0);
 
   const newMedals: MedalDef[] = [];

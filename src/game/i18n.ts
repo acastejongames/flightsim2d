@@ -46,12 +46,12 @@ export function t2(en: string, es: string): string {
 type Entry = { en: string; es: string };
 
 const DICT: Record<string, Entry> = {
-  tagline: { en: '✈ Side-scrolling flight sim', es: '✈ Simulador de vuelo lateral' },
+  tagline: { en: 'Side-scrolling flight sim', es: 'Simulador de vuelo lateral' },
   blurb: {
     en: 'Real lift, drag, stall and thrust physics, live weather with wind, gusts and storms, an endless procedural world and carrier operations. Build a career, earn medals and upgrade your machines.',
     es: 'Física real de sustentación, resistencia, pérdida y empuje, clima vivo con viento, rachas y tormentas, un mundo procedural infinito y operaciones en portaaviones. Haz carrera, gana medallas y mejora tus máquinas.',
   },
-  controls: { en: '⌨ Controls', es: '⌨ Controles' },
+  controls: { en: 'Controls', es: 'Controles' },
   hideControls: { en: 'Hide controls', es: 'Ocultar controles' },
   modeTitle: { en: '1 · Game mode', es: '1 · Modo de juego' },
   openWorld: { en: 'Open World', es: 'Mundo abierto' },

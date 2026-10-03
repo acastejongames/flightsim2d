@@ -2,6 +2,7 @@
 import { Sim } from './game/sim';
 import type { Input } from './game/sim';
 import { getAircraft } from './game/aircraft';
+import type { AircraftId } from './game/aircraft';
 import { generateMission } from './game/missions';
 import { emptyProfile, applyUpgrades, award, rankFor } from './game/career';
 import type { FlightSummary } from './game/career';
@@ -16,13 +17,13 @@ let failures = 0;
 const check = (name: string, ok: boolean, extra = '') => {
   if (!ok) {
     failures++;
-    console.log(`  ✗ ${name} ${extra}`);
-  } else console.log(`  ✓ ${name} ${extra}`);
+    console.log(`  FAIL ${name} ${extra}`);
+  } else console.log(`  ok   ${name} ${extra}`);
 };
 
-function fly(label: string, mode: 'open' | 'carrier', weather: 'clear' | 'storm' | 'snow' | 'fog' | 'crosswind', aircraft: 'sparrow' | 'corsair' | 'hornet', withMission: boolean, seconds: number) {
+function fly(label: string, mode: 'open' | 'carrier', weather: 'clear' | 'storm' | 'snow' | 'fog' | 'crosswind', aircraft: AircraftId, withMission: boolean, seconds: number) {
   console.log(`\n== ${label} ==`);
-  const profile = { ...emptyProfile(), owned: ['sparrow', 'corsair', 'hornet'] as ('sparrow' | 'corsair' | 'hornet')[] };
+  const profile = { ...emptyProfile(), owned: ['pc21', 'cn235', 'ef18', 'typhoon'] as AircraftId[] };
   const spec = applyUpgrades(getAircraft(aircraft), profile);
   const mission = withMission ? generateMission({ mode, x: 0, seed: 42, rankIndex: 2 }) : null;
   const sim = new Sim({ mode, spec, tod: 'day', startAir: !withMission, weather: mission ? mission.weather : weather, mission });
@@ -63,24 +64,24 @@ function fly(label: string, mode: 'open' | 'carrier', weather: 'clear' | 'storm'
 }
 
 // 1. open world with a contract
-const s1 = fly('Open world + contract', 'open', 'clear', 'sparrow', true, 90);
-check('sparrow flew forwards', s1.distance > 500, `${(s1.distance / 1000).toFixed(2)} km`);
+const s1 = fly('Open world + contract', 'open', 'clear', 'pc21', true, 90);
+check('trainer flew forwards', s1.distance > 500, `${(s1.distance / 1000).toFixed(2)} km`);
 
 // 2. carrier qualification
-fly('Carrier ops + contract', 'carrier', 'clear', 'hornet', true, 40);
+fly('Carrier ops + contract', 'carrier', 'clear', 'ef18', true, 40);
 
 // 3. weather stress: storm, snow, fog, crosswind
-fly('Storm flight', 'open', 'storm', 'corsair', false, 60);
-fly('Snow flight (icing)', 'open', 'snow', 'corsair', false, 60);
-fly('Fog flight', 'open', 'fog', 'sparrow', false, 30);
-fly('Crosswind take-off run', 'open', 'crosswind', 'corsair', false, 30);
+fly('Storm flight', 'open', 'storm', 'ef18', false, 60);
+fly('Snow flight (icing)', 'open', 'snow', 'ef18', false, 60);
+fly('Fog flight', 'open', 'fog', 'pc21', false, 30);
+fly('Crosswind take-off run', 'open', 'crosswind', 'ef18', false, 30);
 
 // 4. career maths
 console.log('\n== Career ==');
 const p = emptyProfile();
 const summary: FlightSummary = {
   mode: 'open',
-  aircraft: 'sparrow',
+  aircraft: 'pc21',
   weatherId: 'storm',
   missionTitleEn: 'Ferry flight',
   missionTitleEs: 'Traslado',
@@ -120,8 +121,8 @@ void WX;
 // ---------------------------------------------------------------- landing & mission pipeline
 console.log('\n== Landing pipeline (crosswind) ==');
 {
-  const profile = { ...emptyProfile(), owned: ['sparrow', 'corsair', 'hornet'] as ('sparrow' | 'corsair' | 'hornet')[] };
-  const spec = applyUpgrades(getAircraft('corsair'), profile);
+  const profile = { ...emptyProfile(), owned: ['pc21', 'cn235', 'ef18', 'typhoon'] as AircraftId[] };
+  const spec = applyUpgrades(getAircraft('ef18'), profile);
   const mission = generateMission({ mode: 'open', x: 0, seed: 7, rankIndex: 0, kind: 'ferry' });
   const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'crosswind', mission });
   const ap = getAirport(mission.landingAirport ?? 0);
@@ -172,7 +173,7 @@ console.log('\n== Landing pipeline (crosswind) ==');
 console.log('\n== Trimmed level flight holds altitude (assist on) ==');
 {
   const profile = { ...emptyProfile() };
-  const spec = applyUpgrades(getAircraft('sparrow'), profile);
+  const spec = applyUpgrades(getAircraft('pc21'), profile);
   const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'breezy', mission: null });
   sim.autoThr = true;
   sim.atTarget = spec.vCruise;
@@ -203,7 +204,7 @@ console.log('\n== Trimmed level flight holds altitude (assist on) ==');
 console.log('\n== Sandbox (free play) ==');
 {
   const profile = emptyProfile();
-  const spec = applyUpgrades(getAircraft('sparrow'), profile);
+  const spec = applyUpgrades(getAircraft('pc21'), profile);
   const tune = { ...SANDBOX_DEFAULT, on: true, god: true, fuel: true, wx: 12, wz: 4, turb: 0.2, weather: 'storm' as const };
   const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'storm', mission: null, sandbox: tune });
   // the tuner drives the air, not the preset
@@ -238,7 +239,7 @@ console.log('\n== Sandbox (free play) ==');
 console.log('\n== Flight helpers ==');
 {
   const profile = emptyProfile();
-  const spec = applyUpgrades(getAircraft('corsair'), profile);
+  const spec = applyUpgrades(getAircraft('ef18'), profile);
   const idle: Input = { pitch: 0, thr: 0, brake: false, rudder: 0 };
 
   // --- sharper turn: a reversal must be crisp
@@ -263,17 +264,18 @@ console.log('\n== Flight helpers ==');
     sim.vy = 0;
     sim.assist = false;
     sim.airTime = 60;
-    sim.y += 90; // start 90 m high and let the autopilot fly back down
-    const target = sim.y - 90;
+    // high enough to clear the mountains, 120 m above the target
+    sim.y = 3600;
+    const target = 3480;
     sim.altHold = target;
-    let minY = 9e9;
-    let maxY = -9e9;
-    for (let i = 0; i < 30 * 60; i++) {
-      sim.update(1 / 60, { ...idle, thr: 0 });
-      minY = Math.min(minY, sim.y);
-      maxY = Math.max(maxY, sim.y);
+    let late = 0;
+    for (let i = 0; i < 120 * 60; i++) {
+      sim.update(1 / 60, { ...idle, thr: sim.ias < spec.vCruise ? 0.5 : 0 });
+      if (i > 110 * 60) late = Math.max(late, Math.abs(sim.y - target));
     }
-    check('alt hold captures the altitude', Math.abs(sim.y - target) < 40, `now ${(sim.y - target).toFixed(1)} m off target, band ${(maxY - minY).toFixed(0)} m`);
+    check('alt hold captures the altitude', Math.abs(sim.y - target) < 40, `now ${(sim.y - target).toFixed(1)} m off target`);
+    check('alt hold settles', late < 20, `last 10 s stays within ${late.toFixed(0)} m`);
+    check('alt hold holds on a jet', sim.ias > 150 && sim.alive, `${sim.ias.toFixed(0)} m/s at ${Math.round(sim.y)} m`);
     check('alt hold is on', sim.altHold !== null, `altHold=${sim.altHold === null ? 'off' : 'on'}`);
   }
 
@@ -375,12 +377,29 @@ console.log('\n== Scenery sprites & turn modifier ==');
 {
   // every scenery sprite must exist and be sane
   const fsMod = await import('node:fs');
-  const names = ['tree-pine', 'tree-oak', 'house', 'atc', 'mast', 'turbine', 'block', 'barn', 'lighthouse'];
+  const names = ['tree-pine', 'tree-oak', 'house', 'atc', 'mast', 'turbine', 'block', 'barn', 'lighthouse', 'cloud-cumulus', 'gear'];
   let missing: string[] = [];
   for (const n of names) if (!fsMod.existsSync(`public/images/scenery/${n}.png`)) missing.push(n);
   check('scenery sprites are on disk', missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : `${names.length} sprites`);
   check('scenery module is asset-driven', Object.keys(DECOR).length === names.length, Object.keys(DECOR).join(', '));
-  check('sprites stay lightweight', fsMod.statSync('public/images/scenery').isDirectory(), 'folder present');
+  const bad = Object.entries(DECOR).filter(([, rel]) => !fsMod.existsSync(`public/${String(rel)}`));
+  check('every decor sprite resolves', bad.length === 0, bad.length ? `missing ${bad.map(([k]) => k).join(', ')}` : `${Object.keys(DECOR).length} keys`);
+  const bytes = Object.values(DECOR).reduce((n, rel) => n + fsMod.statSync(`public/${String(rel)}`).size, 0);
+  check('scenery art stays light', bytes < 1_600_000, `${(bytes / 1024).toFixed(0)} KB`);
+
+  // the interface must stay emoji-free (they render differently, or not at all, on PC)
+  const emoji = new RegExp('[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{2B00}-\\u{2BFF}\\u{FE0F}\\u{20E3}\\u{25A0}-\\u{25FF}]', 'u');
+  const uiFiles = [
+    ...fsMod.readdirSync('src/components').map((f: string) => `src/components/${f}`),
+    'src/game/i18n.ts', 'src/game/hud.ts', 'src/game/weather.ts', 'src/game/missions.ts', 'src/game/career.ts',
+  ].filter((f: string) => fsMod.existsSync(f));
+  const dirty = uiFiles.filter((f: string) => emoji.test(fsMod.readFileSync(f, 'utf8')));
+  check('interface is emoji-free', dirty.length === 0, dirty.length ? dirty.join(', ') : `${uiFiles.length} files clean`);
+
+  // no visible propeller: the artwork carries it, the code must not draw spinning discs
+  const spriteSrc = fsMod.readFileSync('src/game/sprites.ts', 'utf8');
+  check('no drawn propellers', !/propDisc|blades/.test(spriteSrc), 'prop discs removed');
+  check('gear is a sprite', spriteSrc.includes('images/scenery/gear.png'), 'gear.png wired');
 
   // the turn modifier must actually change how the aircraft handles
   const spec = getAircraft('ef18');

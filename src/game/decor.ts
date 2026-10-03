@@ -27,6 +27,8 @@ export const DECOR = {
   block: 'images/scenery/block.png',
   barn: 'images/scenery/barn.png',
   lighthouse: 'images/scenery/lighthouse.png',
+  cloud: 'images/scenery/cloud-cumulus.png',
+  gear: 'images/scenery/gear.png',
 } as const;
 
 export type DecorKey = keyof typeof DECOR;

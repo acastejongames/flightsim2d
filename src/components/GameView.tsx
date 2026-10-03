@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';import Ico from './Ico';
+
 import { Sim } from '../game/sim';
 import type { SimSettings, Input } from '../game/sim';
 import { Renderer } from '../game/render';
@@ -181,7 +182,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           sim.toggleSmoke();
           break;
         case 'KeyN': {
-          const next = warpRef.current >= 4 ? 1 : warpRef.current * 2;
+          const next = warpRef.current >= 8 ? 1 : warpRef.current * 2; // x1 → x2 → x4 → x8
           warpRef.current = next;
           setWarp(next);
           sim.say(`TIME ×${next}`, 'info', next > 1 ? t('timeWarp') : '', 1.6);
@@ -218,11 +219,11 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           break;
         case 'Equal':
         case 'NumpadAdd':
-          rend.userZoom = Math.min(2.4, rend.userZoom * 1.15);
+          rend.userZoom = Math.min(5, rend.userZoom * 1.18);
           break;
         case 'Minus':
         case 'NumpadSubtract':
-          rend.userZoom = Math.max(0.5, rend.userZoom / 1.15);
+          rend.userZoom = Math.max(0.4, rend.userZoom / 1.18);
           break;
         case 'Escape':
         case 'KeyP':
@@ -234,7 +235,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       keys.delete(e.code);
     };
     const onWheel = (e: WheelEvent) => {
-      rend.userZoom = Math.min(2.4, Math.max(0.5, rend.userZoom * Math.exp(-e.deltaY * 0.001)));
+      rend.userZoom = Math.min(5, Math.max(0.4, rend.userZoom * Math.exp(-e.deltaY * 0.0012)));
     };
     const onBlur = () => {
       keys.clear();
@@ -338,13 +339,14 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           onClick={() => setPaused(!paused)}
           className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
-          {paused ? `▶ ${t('resume')}` : `❚❚ ${t('pause')}`}
+          <Ico name={paused ? 'play' : 'pause'} size={12} />
+          {paused ? t('resume') : t('pause')}
         </button>
         <button
           onClick={() => setMuted(!muted)}
           className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
-          {muted ? '🔇' : '🔊'}
+          <Ico name={muted ? 'mute' : 'sound'} size={15} />
         </button>
         {settings.sandbox?.on && (
           <button
@@ -353,22 +355,22 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
               showTuner ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-slate-900/70 text-slate-100 ring-white/15 hover:bg-slate-800/80'
             }`}
           >
-            🧪 {t('sandbox')}
+            <Ico name="tune" size={12} className="mr-1 inline -mt-0.5"/>{t('sandbox')}
           </button>
         )}
         <button
           onClick={endFlight}
           className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
-          ⏹ {t('endFlight')}
+          <Ico name="stop" size={11} className="mr-1 inline -mt-0.5"/>{t('endFlight')}
         </button>
       </div>
 
       {coarse && !paused && (
         <>
           <div className="absolute bottom-40 left-3 z-10 flex flex-col gap-3">
-            {touchBtn('up', '▲')}
-            {touchBtn('down', '▼')}
+            {touchBtn('up', '↑')}
+            {touchBtn('down', '↓')}
           </div>
           <div className="absolute bottom-40 right-3 z-10 flex flex-col gap-3">
             {touchBtn('thrUp', 'Thr +')}
@@ -382,10 +384,10 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             {actBtn('LAUNCH', (s) => s.launch())}
             {actBtn('AP', (s) => s.toggleAltHold())}
             {actBtn('SMOKE', (s) => s.toggleSmoke())}
-            {actBtn('TIME', () => setWarp((w) => { const n = w >= 4 ? 1 : w * 2; warpRef.current = n; return n; }))}
+            {actBtn('TIME', () => setWarp((w) => { const n = w >= 8 ? 1 : w * 2; warpRef.current = n; return n; }))}
             {actBtn('RESET', (s) => s.respawn())}
-            {touchBtn('rudL', '◀ R', '!px-3 !py-2 !text-xs !rounded-sm')}
-            {touchBtn('rudR', 'R ▶', '!px-3 !py-2 !text-xs !rounded-sm')}
+            {touchBtn('rudL', '< R', '!px-3 !py-2 !text-xs !rounded-sm')}
+            {touchBtn('rudR', 'R >', '!px-3 !py-2 !text-xs !rounded-sm')}
             {touchBtn('brake', 'BRK', '!px-3 !py-2 !text-xs !rounded-sm')}
           </div>
         </>
@@ -394,9 +396,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       {settings.sandbox?.on && showTuner && (
         <div className="absolute bottom-3 right-3 top-16 z-20 w-[19.5rem] max-w-[86vw] overflow-y-auto rounded-sm bg-slate-950/85 p-3 text-slate-100 ring-1 ring-emerald-300/30 ">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-300">🧪 {t('tuner')}</div>
+            <div className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-300"><Ico name="sliders" size={12} className="mr-1 inline -mt-0.5"/>{t('tuner')}</div>
             <button onClick={() => setShowTuner(false)} className="rounded-lg bg-white/10 px-2 py-0.5 text-xs font-bold hover:bg-white/20">
-              ✕
+              <Ico name="times" size={14} />
             </button>
           </div>
           <p className="mb-3 text-[10px] leading-snug text-slate-400">{t('sbHint')}</p>
@@ -438,7 +440,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
           <div className="space-y-2.5">
             <SbSlider
-              label={`🔄 ${t('turnAmount')}`}
+              label={t('turnAmount')}
               value={tune.turn}
               {...SANDBOX_LIMITS.turn}
               fmt={(v) => `×${v.toFixed(2)}`}
@@ -499,13 +501,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
               onClick={() => applyTune(tuneFromPreset({ ...SANDBOX_DEFAULT, on: tune.on, tod: tune.tod }, 'clear'))}
               className="rounded-sm bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
             >
-              ↺ {t('sbReset')}
+              <Ico name="refresh" size={12} className="mr-1 inline -mt-0.5" />{t('sbReset')}
             </button>
             <button
               onClick={() => simRef.current?.respawn()}
               className="rounded-sm bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
             >
-              ✈ {t('respawn')}
+              <Ico name="plane" size={12} className="mr-1 inline -mt-0.5"/>{t('respawn')}
             </button>
           </div>
 
@@ -521,7 +523,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             </span>
             {simRef.current && simRef.current.godSaves > 0 && (
               <span className="rounded bg-emerald-400/15 px-1.5 py-0.5 text-emerald-200">
-                🛡 {simRef.current.godSaves}
+                <Ico name="shield" size={11} className="mr-1 inline -mt-0.5"/>{simRef.current.godSaves}
               </span>
             )}
           </div>
@@ -539,10 +541,10 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
               }}
               className="rounded-sm bg-white/10 px-4 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
             >
-              ↺ {t('respawn')}
+              <Ico name="refresh" size={13} className="mr-1 inline -mt-0.5"/>{t('respawn')}
             </button>
             <button onClick={endFlight} className="rounded-sm bg-sky-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-sky-400">
-              ⏹ {t('endFlight')}
+              <Ico name="stop" size={11} className="mr-1 inline -mt-0.5"/>{t('endFlight')}
             </button>
           </div>
         </div>
@@ -551,7 +553,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       {missionDone && !crashed && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
           <div className="flex items-center gap-3 rounded-sm bg-emerald-950/85 px-5 py-3 ring-1 ring-emerald-300/30 ">
-            <span className="text-sm font-bold text-emerald-200">✓ {t('missionComplete')}</span>
+            <span className="text-sm font-bold text-emerald-200"><Ico name="check" size={14} className="mr-1 inline -mt-0.5"/>{t('missionComplete')}</span>
             <button onClick={endFlight} className="rounded-sm bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-300">
               {t('debrief')} →
             </button>
@@ -562,7 +564,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       {missionFailed && !crashed && !missionDone && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
           <div className="flex items-center gap-3 rounded-sm bg-red-950/85 px-5 py-3 ring-1 ring-red-300/30 ">
-            <span className="text-sm font-bold text-red-200">✕ {t('missionFailed')}</span>
+            <span className="text-sm font-bold text-red-200"><Ico name="times" size={14} className="mr-1 inline -mt-0.5"/>{t('missionFailed')}</span>
             <button onClick={endFlight} className="rounded-sm bg-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/25">
               {t('debrief')} →
             </button>
@@ -590,13 +592,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                   }}
                   className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
                 >
-                  ↺ {t('respawn')}
+                  <Ico name="refresh" size={12} className="mr-1 inline -mt-0.5" />{t('respawn')}
                 </button>
                 <button
                   onClick={endFlight}
                   className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
                 >
-                  ⏹ {t('endFlight')}
+                  <Ico name="stop" size={11} className="mr-1 inline -mt-0.5"/>{t('endFlight')}
                 </button>
                 {sbOn && (
                   <button
@@ -606,7 +608,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                     }}
                     className="rounded-sm bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 ring-1 ring-emerald-300/40 hover:bg-emerald-300"
                   >
-                    🧪 {t('tuner')}
+                    <Ico name="sliders" size={12} className="mr-1 inline -mt-0.5"/>{t('tuner')}
                   </button>
                 )}
                 <button

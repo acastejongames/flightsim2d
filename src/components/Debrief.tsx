@@ -3,6 +3,7 @@ import type { AwardResult, FlightSummary, Profile } from '../game/career';
 import { getAircraft } from '../game/aircraft';
 import { WX } from '../game/weather';
 import { t, t2, useLang } from '../game/i18n';
+import Ico from './Ico';
 
 interface Props {
   profile: Profile;
@@ -35,18 +36,18 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
           </h1>
           {sandbox && (
             <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-200 ring-1 ring-emerald-300/30">
-              🧪 {t('sandboxOn')}
+              <Ico name="tune" size={12} className="mr-1 inline -mt-0.5" />{t('sandboxOn')}
             </div>
           )}
           <p className="mt-1 text-sm text-slate-300">
-            {spec.name} · {lang === 'es' ? wx.es : wx.en} {wx.icon} ·{' '}
+            {spec.name} · <Ico name={wx.icon} size={12} className="inline -mt-0.5" /> {lang === 'es' ? wx.es : wx.en} ·{' '}
             {summary.missionTitleEn ? (lang === 'es' ? summary.missionTitleEs : summary.missionTitleEn) : t2('Free flight', 'Vuelo libre')}
           </p>
         </div>
 
         {award?.rankUp && (
           <div className="mb-5 rounded-md bg-amber-400/10 p-5 ring-1 ring-amber-300/40">
-            <div className="text-lg font-black text-amber-200">🎖 {t('rankUp')}</div>
+            <div className="flex items-center gap-1.5 text-lg font-black text-amber-200"><Ico name="medal" size={16} />{t('rankUp')}</div>
             <div className="text-2xl font-black">{lang === 'es' ? award.newRank.es : award.newRank.en}</div>
           </div>
         )}
@@ -54,7 +55,7 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
         <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
           {!award ? (
             <div className="rounded-md bg-emerald-950/60 p-5 ring-1 ring-emerald-300/30 ">
-              <div className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">🧪 {t('sandbox')}</div>
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300"><Ico name="tune" size={12} />{t('sandbox')}</div>
               <p className="text-sm text-emerald-100">{t('sbNoReward')}</p>
             </div>
           ) : (
@@ -128,7 +129,7 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
                 <div className="flex flex-wrap gap-3">
                   {award.newMedals.map((m) => (
                     <div key={m.id} className="flex items-center gap-2 rounded-sm bg-slate-950/50 px-3 py-2 ring-1 ring-amber-300/30">
-                      <span className="text-2xl">{m.icon}</span>
+                      <Ico name={m.icon} size={22} className="text-amber-200" />
                       <div>
                         <div className="text-sm font-bold">{lang === 'es' ? m.es : m.en}</div>
                         <div className="text-[10px] text-slate-300">{lang === 'es' ? m.descEs : m.descEn}</div>
@@ -146,16 +147,16 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
             onClick={onAgain}
             className="rounded-sm bg-sky-400 px-6 py-3 text-sm font-black text-slate-950 "
           >
-            ✈ {t('flyAgain')}
+            <Ico name="plane" size={15} className="mr-1.5 inline -mt-0.5" />{t('flyAgain')}
           </button>
           <button onClick={onNewContract} className="rounded-sm bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
-            🎲 {t('reroll')}
+            <Ico name="refresh" size={15} className="mr-1.5 inline -mt-0.5" />{t('reroll')}
           </button>
           <button onClick={onHangar} className="rounded-sm bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
-            🛠 {t('hangar')}
+            <Ico name="wrench" size={15} className="mr-1.5 inline -mt-0.5" />{t('hangar')}
           </button>
           <button onClick={onMenu} className="rounded-sm bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
-            ☰ {t('toMenu')}
+            <Ico name="menu" size={15} className="mr-1.5 inline -mt-0.5" />{t('toMenu')}
           </button>
         </div>
       </div>

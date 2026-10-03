@@ -1,8 +1,8 @@
 import { clamp, fbm, hash, mixRGB, smoothstep } from './noise';
 import type { Sim, Particle } from './sim';
 import { CARRIER_LEN, CAT_END, CAT_START, DECK_H, TODS, WIRES, airportAt, airportsNear, terrainHeight } from './world';
-import { DECOR, decorSprite, drawDecorSprite, preloadDecor } from './decor';
 import type { DecorKey } from './decor';
+import { DECOR, decorSprite, drawDecorSprite, preloadDecor } from './decor';
 import type { Airport, TimeOfDay, ToD, WorldMode } from './world';
 import { drawAircraft } from './sprites';
 import { drawHUD } from './hud';
@@ -46,6 +46,7 @@ export class Renderer {
   private light: number[];
   private clouds: HTMLCanvasElement[] = [];
   private cloudsDark: HTMLCanvasElement[] = [];
+  private cloudsFromSprite = false;
   private stars: Star[] = [];
   private hbuf = new Float32Array(1024);
   private initCam = false;
@@ -134,6 +135,7 @@ export class Renderer {
 
   private makeCloudSet(dark: boolean): HTMLCanvasElement[] {
     const out: HTMLCanvasElement[] = [];
+    const spr = decorSprite(DECOR.cloud);
     const t = this.tod;
     let top = t.id === 'dusk' ? [255, 200, 170] : t.id === 'dawn' ? [255, 226, 205] : [255, 255, 255];
     let shade = t.id === 'dusk' ? [170, 110, 140] : [150, 166, 196];
@@ -149,6 +151,21 @@ export class Renderer {
       cv.width = 420;
       cv.height = 180;
       const g = cv.getContext('2d')!;
+      if (spr) {
+        // hand-drawn cumulus, squashed and tinted for each cloud variant and
+        // every time of day
+        const scaleW = 420 * (0.86 + v * 0.09);
+        const scaleH = 180 * (0.9 + v * 0.06);
+        const dx = (420 - scaleW) / 2 + (v - 1) * 6;
+        const dy = 180 - scaleH;
+        g.drawImage(spr.img, dx, dy, scaleW, scaleH);
+        g.globalCompositeOperation = 'source-atop';
+        g.fillStyle = c(dark ? [70, 74, 88] : top, dark ? 0.62 : 0.28);
+        g.fillRect(0, 0, 420, 180);
+        g.globalCompositeOperation = 'source-over';
+        out.push(cv);
+        continue;
+      }
       const puffs: { x: number; y: number; r: number }[] = [];
       const n = 12 + v * 2;
       for (let i = 0; i < n; i++) {
@@ -384,6 +401,11 @@ export class Renderer {
   // ---------------------------------------------------------------- clouds
   private drawCloudLayer(sim: Sim, layer: 'far' | 'back' | 'front'): void {
     const { ctx, W, H, cam } = this;
+    // rebuild the cloud canvases once the hand-drawn cumulus has decoded
+    if (!this.cloudsFromSprite && decorSprite(DECOR.cloud)) {
+      this.cloudsFromSprite = true;
+      this.buildClouds();
+    }
     if (this.clouds.length === 0) return;
     const far = layer === 'far';
     const kz = far ? cam.zoom * 0.3 : cam.zoom;
@@ -1178,7 +1200,7 @@ export class Renderer {
       ctx.fillText(g.label, px, py - r - 10);
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
-      ctx.fillText(`${dx < 0 ? '◀' : '▶'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, px, py - r + 20);
+      ctx.fillText(`${dx < 0 ? '<' : '>'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, px, py - r + 20);
       ctx.globalAlpha = 1;
       ctx.textAlign = 'start';
     }

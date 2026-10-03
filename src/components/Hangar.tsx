@@ -6,6 +6,7 @@ import type { Profile } from '../game/career';
 import { t, t2, useLang } from '../game/i18n';
 import type { SandboxTune } from '../game/sandbox';
 import AircraftPreview from './AircraftPreview';
+import Ico from './Ico';
 
 interface Props {
   profile: Profile;
@@ -62,10 +63,10 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-4xl font-black tracking-tight">
-              🛠 {t('hangar')}
+              <Ico name="wrench" size={26} className="mr-1.5 inline -mt-0.5"/>{t('hangar')}
               {sb && (
                 <span className="ml-3 align-middle rounded-full bg-emerald-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950">
-                  🧪 {t('sandboxOn')}
+                  <Ico name="tune" size={12} className="mr-1 inline -mt-0.5"/>{t('sandboxOn')}
                 </span>
               )}
             </h1>
@@ -78,18 +79,19 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
             <div className="inline-flex overflow-hidden rounded-sm ring-1 ring-white/15">
               {(
                 [
-                  ['aircraft', `✈ ${t('aircraftTitle').slice(4)}`],
-                  ['upgrades', `⚙ ${t('upgrades')}`],
-                  ['logbook', `📖 ${t('stats')}`],
+                  ['aircraft', t('aircraftTitle').slice(4)],
+                  ['upgrades', t('upgrades')],
+                  ['logbook', t('stats')],
                 ] as const
               ).map(([id, label]) => (
                 <button
  key={id}
                   onClick={() => setTab(id)}
- className={`px-4 py-2.5 text-xs font-bold uppercase ${
+ className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold uppercase ${
                     tab === id ? 'bg-sky-500 text-slate-950' : 'bg-white/5 text-slate-300 hover:bg-white/10'
                   }`}
                 >
+                  <Ico name={id === 'aircraft' ? 'plane' : id === 'upgrades' ? 'wrench' : 'book'} size={13} />
                   {label}
                 </button>
               ))}
@@ -151,7 +153,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                       </span>
                     )}
                     {!owned && sb && (
-                      <span className="text-[10px] font-bold uppercase text-emerald-300">🧪 {t('free')}</span>
+                      <span className="text-[10px] font-bold uppercase text-emerald-300"><Ico name="tune" size={11} className="mr-1 inline -mt-0.5"/>{t('free')}</span>
                     )}
                   </div>
                 </div>
@@ -171,7 +173,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                 <div key={u.id} className="rounded-md bg-slate-900/70 p-4 ring-1 ring-white/10 ">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl">{u.icon}</span>
+                      <Ico name={u.icon} size={22} className="text-sky-200" />
                       <div>
                         <div className="font-bold leading-tight">{lang === 'es' ? u.es : u.en}</div>
                         <div className="text-[11px] text-slate-400">{lang === 'es' ? u.descEs : u.descEn}</div>
@@ -231,7 +233,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
               ))}
               {sb && (
                 <div className="col-span-2 rounded-sm bg-emerald-400/10 p-3 ring-1 ring-emerald-300/30 sm:col-span-3">
-                  <div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">🧪 {t('cheats')}</div>
+                  <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300"><Ico name="tune" size={12} />{t('cheats')}</div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => cheat({ money: profile.money + 10000 })}
@@ -257,7 +259,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                       }
                       className="rounded-sm bg-white/10 px-3 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
                     >
-                      🔓 {t('unlockAll')}
+                      <Ico name="unlock" size={13} className="mr-1.5 inline -mt-0.5"/>{t('unlockAll')}
                     </button>
                   </div>
                 </div>
@@ -276,7 +278,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                     armed ? 'bg-red-500/80 text-white ring-red-300/40' : 'bg-white/10 text-slate-300 ring-white/15 hover:bg-white/20'
                   }`}
                 >
-                  {armed ? '⚠ ' + t('reset') : t('reset')}
+                  {armed ? t('confirmReset') : t('reset')}
                 </button>
               </div>
             </div>
@@ -291,7 +293,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                       title={lang === 'es' ? m.descEs : m.descEn}
  className={`rounded-sm p-2 text-center ring-1 ${got ? 'bg-amber-400/15 ring-amber-300/40' : 'bg-white/5 ring-white/10 opacity-45'}`}
                     >
-                      <div className="text-xl">{got ? m.icon : '🔒'}</div>
+                      <Ico name={got ? m.icon : 'lock'} size={20} className={got ? 'text-amber-200' : ''} />
                       <div className="text-[9px] font-bold uppercase leading-tight text-slate-200">{lang === 'es' ? m.es : m.en}</div>
                     </div>
                   );
@@ -302,7 +304,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
         )}
 
         <p className="mt-6 text-xs text-slate-400">
-          {sb && <span className="mr-2 font-bold text-emerald-300">🧪 {t2('Sandbox: everything is free.', 'Sandbox: todo es gratis.')}</span>}
+          {sb && <span className="mr-2 inline-flex items-center gap-1.5 font-bold text-emerald-300"><Ico name="tune" size={12} />{t2('Sandbox: everything is free.', 'Sandbox: todo es gratis.')}</span>}
           {t2('Upgrades apply to every aircraft you fly.', 'Las mejoras se aplican a todos los aviones que vueles.')}{' '}
           {t2('Nav computer shows wind-corrected guidance.', 'El computador de navegación muestra guiado corregido por viento.')}
         </p>

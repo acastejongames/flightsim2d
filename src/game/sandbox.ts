@@ -91,7 +91,7 @@ export function clampTune(t: SandboxTune): SandboxTune {
     temp: num(t.temp, SANDBOX_DEFAULT.temp, -30, 45),
     weather: ids.includes(t.weather) ? t.weather : 'clear',
     tod: tods.includes(t.tod) ? t.tod : 'day',
-    turn: num(t.turn, SANDBOX_DEFAULT.turn, 0.5, 2.2),
+    turn: num(t.turn, SANDBOX_DEFAULT.turn, 0.4, 3),
   };
 }
 
@@ -136,7 +136,7 @@ export const visToSlider = (m: number): number => Math.round((Math.log(Math.max(
 export const sliderToVis = (v: number): number => Math.round(200 * Math.pow(40000 / 200, Math.min(100, Math.max(0, v)) / 100));
 
 export const SANDBOX_LIMITS = {
-  turn: { min: 0.5, max: 2.2, step: 0.05 },
+  turn: { min: 0.4, max: 3, step: 0.05 },
   wx: { min: -18, max: 18, step: 0.5 },
   wz: { min: -22, max: 22, step: 0.5 },
   gust: { min: 0, max: 1.5, step: 0.05 },

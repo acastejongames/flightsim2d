@@ -196,8 +196,10 @@ export class AudioEngine {
     const dens = Math.min(1, sim.rho / 1.225 + 0.2);
 
     if (this.kind === 'prop') {
-      const base = s.id === 'corsair' ? 38 : 34;
-      const f = base + th * (s.id === 'corsair' ? 62 : 48);
+      // bigger airframes turn slower, props spin faster than turboprops
+      const heavy = s.emptyMass > 6000;
+      const base = heavy ? 30 : 36;
+      const f = base + th * (heavy ? 52 : 62);
       this.osc1.frequency.setTargetAtTime(f, t, tc);
       this.osc2.frequency.setTargetAtTime(f * 0.503, t, tc);
       this.lfo.frequency.setTargetAtTime(f * 0.5, t, tc);

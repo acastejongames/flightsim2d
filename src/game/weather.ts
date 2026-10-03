@@ -2,12 +2,13 @@ import { clamp, fbm2, hash, noise1, smoothstep } from './noise';
 import type { SandboxTune } from './sandbox';
 import { terrainHeight } from './world';
 import type { WorldMode } from './world';
+import type { IconName } from '../components/Ico';
 
 export type WeatherId = 'clear' | 'breezy' | 'crosswind' | 'overcast' | 'rain' | 'storm' | 'fog' | 'snow' | 'dynamic';
 
 export interface WeatherPreset {
   id: WeatherId;
-  icon: string;
+  icon: IconName;
   en: string;
   es: string;
   descEn: string;
@@ -30,55 +31,55 @@ export interface WeatherPreset {
 
 export const WEATHERS: WeatherPreset[] = [
   {
-    id: 'clear', icon: '☀️', en: 'Clear', es: 'Despejado',
+    id: 'clear', icon: 'sun', en: 'Clear', es: 'Despejado',
     descEn: 'Calm air, unlimited visibility. Ideal to learn.', descEs: 'Aire en calma y visibilidad ilimitada. Ideal para aprender.',
     wx: 2.2, wz: 0.8, gust: 0.12, turb: 0.1, shear: 0.08, cover: 0.15, ceiling: 900,
     precip: 'none', precipRate: 0, vis: 26000, temp: 21, storm: false, icing: 0, seaState: 0.5,
   },
   {
-    id: 'breezy', icon: '🌤️', en: 'Breezy', es: 'Brisa',
+    id: 'breezy', icon: 'wind', en: 'Breezy', es: 'Brisa',
     descEn: 'Noticeable wind, light chop and a few cumulus.', descEs: 'Viento notable, turbulencia ligera y algunos cúmulos.',
     wx: 6.5, wz: 3, gust: 0.32, turb: 0.28, shear: 0.16, cover: 0.35, ceiling: 1100,
     precip: 'none', precipRate: 0, vis: 21000, temp: 18, storm: false, icing: 0, seaState: 0.9,
   },
   {
-    id: 'crosswind', icon: '💨', en: 'Crosswind', es: 'Viento cruzado',
+    id: 'crosswind', icon: 'crosswind', en: 'Crosswind', es: 'Viento cruzado',
     descEn: 'Strong crosswind — keep it on the centreline with rudder (J/L).', descEs: 'Viento cruzado fuerte: mantén el eje con el timón (J/L).',
     wx: 2.5, wz: 11, gust: 0.45, turb: 0.4, shear: 0.22, cover: 0.35, ceiling: 1200,
     precip: 'none', precipRate: 0, vis: 20000, temp: 15, storm: false, icing: 0, seaState: 1.1,
   },
   {
-    id: 'overcast', icon: '☁️', en: 'Overcast', es: 'Cubierto',
+    id: 'overcast', icon: 'overcast', en: 'Overcast', es: 'Cubierto',
     descEn: 'Solid deck, low ceiling, smooth but blind near the cloud base.', descEs: 'Techo sólido y bajo; suave, pero ciego cerca de la base.',
     wx: 8, wz: 4.5, gust: 0.38, turb: 0.34, shear: 0.3, cover: 0.88, ceiling: 620,
     precip: 'none', precipRate: 0, vis: 12000, temp: 12, storm: false, icing: 0.25, seaState: 1.2,
   },
   {
-    id: 'rain', icon: '🌧️', en: 'Rain', es: 'Lluvia',
+    id: 'rain', icon: 'rain', en: 'Rain', es: 'Lluvia',
     descEn: 'Steady rain, wet runway, reduced braking action.', descEs: 'Lluvia constante, pista mojada y frenado reducido.',
     wx: 10, wz: 5, gust: 0.55, turb: 0.5, shear: 0.42, cover: 0.95, ceiling: 480,
     precip: 'rain', precipRate: 0.55, vis: 5200, temp: 10, storm: false, icing: 0.6, seaState: 1.6,
   },
   {
-    id: 'storm', icon: '⛈️', en: 'Thunderstorm', es: 'Tormenta',
+    id: 'storm', icon: 'storm', en: 'Thunderstorm', es: 'Tormenta',
     descEn: 'Cumulonimbus, severe turbulence, microbursts, lightning. Dangerous.', descEs: 'Cumulonimbos, turbulencia severa, micro-ráfagas y rayos. Peligroso.',
     wx: 16, wz: 9, gust: 1, turb: 0.92, shear: 0.75, cover: 1, ceiling: 320,
     precip: 'rain', precipRate: 0.95, vis: 2200, temp: 15, storm: true, icing: 0.85, seaState: 2.4,
   },
   {
-    id: 'fog', icon: '🌫️', en: 'Fog', es: 'Niebla',
+    id: 'fog', icon: 'fog', en: 'Fog', es: 'Niebla',
     descEn: 'Thick fog: you will need instruments and a gentle approach.', descEs: 'Niebla densa: necesitarás instrumentos y una aproximación suave.',
     wx: 2, wz: 1, gust: 0.1, turb: 0.14, shear: 0.06, cover: 0.55, ceiling: 90,
     precip: 'none', precipRate: 0, vis: 550, temp: 6, storm: false, icing: 0.2, seaState: 0.4,
   },
   {
-    id: 'snow', icon: '🌨️', en: 'Snow', es: 'Nieve',
+    id: 'snow', icon: 'snow', en: 'Snow', es: 'Nieve',
     descEn: 'Sub-zero airframe icing, snow showers and poor visibility.', descEs: 'Engelamiento bajo cero, chubascos de nieve y mala visibilidad.',
     wx: 7.5, wz: 4, gust: 0.5, turb: 0.44, shear: 0.4, cover: 0.96, ceiling: 380,
     precip: 'snow', precipRate: 0.75, vis: 2400, temp: -6, storm: false, icing: 1, seaState: 1.4,
   },
   {
-    id: 'dynamic', icon: '🌦️', en: 'Dynamic front', es: 'Frente dinámico',
+    id: 'dynamic', icon: 'front', en: 'Dynamic front', es: 'Frente dinámico',
     descEn: 'It starts calm — and then the weather comes for you.', descEs: 'Empieza en calma… y luego el tiempo viene a por ti.',
     wx: 3, wz: 1.5, gust: 0.2, turb: 0.16, shear: 0.12, cover: 0.25, ceiling: 1000,
     precip: 'none', precipRate: 0, vis: 22000, temp: 17, storm: false, icing: 0.1, seaState: 0.6,

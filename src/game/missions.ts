@@ -3,6 +3,7 @@ import { getAirport, terrainHeight } from './world';
 import type { WorldMode } from './world';
 import type { WeatherId } from './weather';
 import { t2 } from './i18n';
+import type { IconName } from '../components/Ico';
 
 export type MissionKind =
   | 'ferry'
@@ -80,17 +81,17 @@ export interface LandingInfo {
   surface: string;
 }
 
-const TYPE_LABELS: Record<MissionKind, { en: string; es: string; icon: string }> = {
-  ferry: { en: 'Ferry flight', es: 'Traslado', icon: '🛩️' },
-  delivery: { en: 'Cargo delivery', es: 'Transporte de carga', icon: '📦' },
-  tour: { en: 'Sightseeing tour', es: 'Vuelo turístico', icon: '🗺️' },
-  precision: { en: 'Precision landing', es: 'Aterrizaje de precisión', icon: '🎯' },
-  urgent: { en: 'Urgent medevac', es: 'Evacuación urgente', icon: '🚑' },
-  sar: { en: 'Search & rescue', es: 'Búsqueda y rescate', icon: '🆘' },
-  survey: { en: 'Low level survey', es: 'Inspección a baja cota', icon: '📐' },
-  trial: { en: 'Time trial', es: 'Contrarreloj', icon: '⏱️' },
-  carrierQual: { en: 'Carrier qualification', es: 'Cualificación en portaaviones', icon: '⚓' },
-  crosswind: { en: 'Crosswind check ride', es: 'Examen de viento cruzado', icon: '💨' },
+const TYPE_LABELS: Record<MissionKind, { en: string; es: string; icon: IconName }> = {
+  ferry: { en: 'Ferry flight', es: 'Traslado', icon: 'prop' },
+  delivery: { en: 'Cargo delivery', es: 'Transporte de carga', icon: 'crate' },
+  tour: { en: 'Sightseeing tour', es: 'Vuelo turístico', icon: 'map' },
+  precision: { en: 'Precision landing', es: 'Aterrizaje de precisión', icon: 'target' },
+  urgent: { en: 'Urgent medevac', es: 'Evacuación urgente', icon: 'cross-med' },
+  sar: { en: 'Search & rescue', es: 'Búsqueda y rescate', icon: 'radar' },
+  survey: { en: 'Low level survey', es: 'Inspección a baja cota', icon: 'route' },
+  trial: { en: 'Time trial', es: 'Contrarreloj', icon: 'clock' },
+  carrierQual: { en: 'Carrier qualification', es: 'Cualificación en portaaviones', icon: 'anchor' },
+  crosswind: { en: 'Crosswind check ride', es: 'Examen de viento cruzado', icon: 'crosswind' },
 };
 
 export const missionIcon = (k: MissionKind): string => TYPE_LABELS[k].icon;

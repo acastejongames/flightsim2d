@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';import Ico from './Ico';
+import type { IconName } from './Ico';
+
 import { AIRCRAFT, getAircraft } from '../game/aircraft';
 import type { AircraftId, AircraftSpec } from '../game/aircraft';
 import type { SimSettings } from '../game/sim';
@@ -34,7 +36,7 @@ function Seg<T extends string>({
   onChange,
 }: {
   value: T;
-  options: { id: T; label: string; icon?: string }[];
+  options: { id: T; label: string; icon?: IconName }[];
   onChange: (v: T) => void;
 }) {
   return (
@@ -47,7 +49,7 @@ function Seg<T extends string>({
             value === o.id ? 'bg-sky-500 text-slate-950' : 'text-slate-300 hover:bg-white/10'
           }`}
         >
-          {o.icon && <span className="mr-1.5">{o.icon}</span>}
+          {o.icon && <Ico name={o.icon} size={14} className="mr-1.5 inline -mt-0.5" />}
           {o.label}
         </button>
       ))}
@@ -61,10 +63,9 @@ interface Props {
   onHangar: () => void;
   sandbox: SandboxTune;
   onSandbox: (t: SandboxTune) => void;
-  onSpriteLab: () => void;
 }
 
-export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, onSpriteLab }: Props) {
+export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }: Props) {
   const lang = useLang();
   const [mode, setMode] = useState<WorldMode>(profile.mode);
   const [acId, setAcId] = useState<AircraftId>(profile.aircraft);
@@ -93,7 +94,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
 
   const pickMode = (m: WorldMode) => {
     setMode(m);
-    if (m === 'carrier' && !spec.carrier) setAcId('hornet');
+    if (m === 'carrier' && !spec.carrier) setAcId('ef18');
   };
 
   const activeWeather: WeatherId = contractMode ? mission.weather : weather;
@@ -146,17 +147,10 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                     lang === l ? 'bg-sky-500 text-slate-950' : 'bg-white/5 text-slate-300 hover:bg-white/10'
                   }`}
                 >
-                  {l === 'en' ? '🇬🇧 EN' : '🇪🇸 ES'}
+                  {l === 'en' ? 'EN' : 'ES'}
                 </button>
               ))}
             </div>
-            <button
-              onClick={onSpriteLab}
-              title={t2('Preview the aircraft renderer at scale', 'Ver el renderizador de aviones a escala')}
-              className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold ring-1 ring-white/15 hover:bg-white/20"
-            >
-              🎨 {t2('Sprite lab', 'Sprites')}
-            </button>
             <button
               onClick={() => setShowCtl((s) => !s)}
               className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold ring-1 ring-white/15 hover:bg-white/20"
@@ -187,14 +181,14 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
           <div>
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{t('medals')}</div>
             <button onClick={onHangar} className="text-lg font-black text-sky-200 hover:text-sky-100">
-              🏅 {profile.medals.length}/{MEDALS.length}
+              <Ico name="medal" size={15} className="mr-1 inline -mt-0.5" />{profile.medals.length}/{MEDALS.length}
             </button>
           </div>
           <button
             onClick={onHangar}
             className="rounded-sm bg-sky-400 px-5 py-3 text-sm font-black text-slate-950 "
           >
-            🛠 {t('hangar')}
+            <Ico name="wrench" size={14} className="mr-1.5 inline -mt-0.5"/>{t('hangar')}
           </button>
         </section>
 
@@ -210,9 +204,9 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
           <div className="grid gap-4 sm:grid-cols-2">
             {(
               [
-                { id: 'open' as WorldMode, title: t('openWorld'), icon: '🏔', text: t('openWorldText') },
-                { id: 'carrier' as WorldMode, title: t('carrierOps'), icon: '⚓', text: t('carrierOpsText') },
-              ]
+                { id: 'open', title: t('openWorld'), icon: 'map', text: t('openWorldText') },
+                { id: 'carrier', title: t('carrierOps'), icon: 'anchor', text: t('carrierOpsText') },
+              ] as { id: WorldMode; title: string; icon: IconName; text: string }[]
             ).map((m) => (
               <button
  key={m.id}
@@ -222,7 +216,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                 }`}
               >
                 <div className="mb-1 flex items-center gap-3">
-                  <span className="text-2xl">{m.icon}</span>
+                  <Ico name={m.icon} size={24} className="text-sky-200" />
                   <span className="text-xl font-bold">{m.title}</span>
                   {mode === m.id && <span className="ml-auto rounded-sm bg-sky-400 px-2 py-0.5 text-[10px] font-bold text-slate-950">{t('selected')}</span>}
                 </div>
@@ -237,7 +231,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
           <h2 className={H2}>{t('aircraftTitle')}</h2>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {AIRCRAFT.map((a) => {
-              const carrierLock = mode === 'carrier' && !a.carrier;
+              const carrierLock = mode === 'carrier' && !a.carrier; // only the EF-18 flies off the boat
               const isOwned = profile.owned.includes(a.id);
               const frame = AIRFRAMES[a.id];
               const rankOk = sb || rank.index >= frame.rank;
@@ -279,17 +273,19 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                     <div className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ring-1 ${
                       sb ? 'bg-emerald-400/90 text-slate-950 ring-emerald-200/60' : 'bg-slate-950/85 text-amber-300 ring-amber-300/40'
                     }`}>
-                      {sb ? `🧪 ${t('free')} · 0 cr` : `🔒 ${t('locked')} · ${frame.price.toLocaleString()} cr${rankOk ? '' : ` · ${t('needRank')} ${RANKS[frame.rank]?.[lang === 'es' ? 'es' : 'en']}`}`}
+                      <Ico name={sb ? 'tune' : 'lock'} size={11} className="mr-1 inline -mt-0.5" />
+                      {sb ? `${t('free')} · 0 cr` : `${t('locked')} · ${frame.price.toLocaleString()} cr${rankOk ? '' : ` · ${t('needRank')} ${RANKS[frame.rank]?.[lang === 'es' ? 'es' : 'en']}`}`}
                     </div>
                   )}
                 </button>
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+            <Ico name={sb ? 'tune' : 'plane'} size={12} />
             {sb
-              ? `🧪 ${t2('Sandbox: every aircraft is free to fly right now.', 'Sandbox: ahora mismo puedes volar cualquier avión gratis.')}`
-              : `${owned ? `✈ ${t('owned')}` : ''} ${t('buy')}: `}
+              ? t2('Sandbox: every aircraft is free to fly right now.', 'Sandbox: ahora mismo puedes volar cualquier avión gratis.')
+              : `${owned ? `${t('owned')} ·` : ''} ${t('buy')}:`}
             {!sb && <button onClick={onHangar} className="text-sky-300 underline">{t('hangar')}</button>}
           </p>
         </section>
@@ -303,13 +299,13 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                 onClick={() => setContractMode(true)}
  className={`px-3.5 py-2 text-xs font-bold uppercase ${contractMode ? 'bg-sky-500 text-slate-950' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
               >
-                📋 {t('career')}
+                <Ico name="contract" size={13} className="mr-1.5 inline -mt-0.5"/>{t('career')}
               </button>
               <button
                 onClick={() => setContractMode(false)}
  className={`px-3.5 py-2 text-xs font-bold uppercase ${!contractMode ? 'bg-sky-500 text-slate-950' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
               >
-                🕊 {t('freeFlight')}
+                <Ico name="plane" size={13} className="mr-1.5 inline -mt-0.5"/>{t('freeFlight')}
               </button>
             </div>
           </div>
@@ -321,7 +317,9 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                     <span className="text-2xl">{missionIcon(mission.kind)}</span>
                     <span className="text-xl font-bold">{lang === 'es' ? mission.titleEs : mission.titleEn}</span>
                     <span className="rounded-md bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-200">
-                      {'★'.repeat(mission.difficulty)}
+                      {Array.from({ length: mission.difficulty }).map((_, i) => (
+                        <Ico key={i} name="star" size={11} filled className="mr-0.5 inline -mt-0.5 text-amber-200" />
+                      ))}
                     </span>
                   </div>
                   <p className="text-sm text-slate-300">{lang === 'es' ? mission.briefEs : mission.briefEn}</p>
@@ -330,7 +328,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                       const w = WEATHERS.find((x) => x.id === mission.weather) ?? WEATHERS[0];
                       return (
                         <span className="rounded-md bg-white/10 px-2 py-1 text-slate-200">
-                          {w.icon} {lang === 'es' ? w.es : w.en}
+                          <Ico name={w.icon} size={13} className="mr-1 inline -mt-0.5"/>{lang === 'es' ? w.es : w.en}
                         </span>
                       );
                     })()}
@@ -339,11 +337,11 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                     </span>
                     <span className="rounded-md bg-sky-400/15 px-2 py-1 text-sky-200">+{mission.xp} XP</span>
                     {mission.timeLimit && (
-                      <span className="rounded-md bg-white/10 px-2 py-1 text-slate-200">⏱ {Math.round(mission.timeLimit / 60)} min</span>
+                      <span className="rounded-md bg-white/10 px-2 py-1 text-slate-200"><Ico name="clock" size={12} className="mr-1 inline -mt-0.5"/>{Math.round(mission.timeLimit / 60)} min</span>
                     )}
                     {mission.gates.length > 0 && (
                       <span className="rounded-md bg-white/10 px-2 py-1 text-slate-200">
-                        🎯 {mission.gates.length} {t2('waypoints', 'balizas')}
+                        <Ico name="target" size={12} className="mr-1 inline -mt-0.5"/>{mission.gates.length} {t2('waypoints', 'balizas')}
                       </span>
                     )}
                     {mission.ceilAgl && (
@@ -355,7 +353,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                   onClick={() => setSeed(Math.floor(Math.random() * 100000))}
                   className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold ring-1 ring-white/15 hover:bg-white/20"
                 >
-                  🎲 {t('reroll')}
+                  <Ico name="refresh" size={14} className="mr-1.5 inline -mt-0.5"/>{t('reroll')}
                 </button>
               </div>
             ) : (
@@ -379,7 +377,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                     active ? 'bg-sky-500/20 ring-sky-300/60' : 'bg-slate-900/60 ring-white/10 hover:bg-slate-900/80'
                   } ${contractMode ? 'cursor-not-allowed opacity-45' : ''}`}
                 >
-                  <div className="text-xl">{w.icon}</div>
+                  <Ico name={w.icon} size={22} className="text-sky-200" />
                   <div className="text-sm font-bold">{lang === 'es' ? w.es : w.en}</div>
                   <div className="text-[11px] leading-snug text-slate-400">{lang === 'es' ? w.descEs : w.descEn}</div>
                 </button>
@@ -395,10 +393,10 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
               value={tod}
               onChange={setTod}
               options={[
-                { id: 'dawn', label: TODS.dawn.label, icon: '🌅' },
-                { id: 'day', label: TODS.day.label, icon: '☀️' },
-                { id: 'dusk', label: TODS.dusk.label, icon: '🌇' },
-                { id: 'night', label: TODS.night.label, icon: '🌙' },
+                { id: 'dawn', label: TODS.dawn.label, icon: 'dawn' },
+                { id: 'day', label: TODS.day.label, icon: 'sun' },
+                { id: 'dusk', label: TODS.dusk.label, icon: 'dusk' },
+                { id: 'night', label: TODS.night.label, icon: 'night' },
               ]}
             />
           </div>
@@ -410,44 +408,42 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
               options={
                 mode === 'carrier'
                   ? [
-                      { id: 'ground', label: t('onCat'), icon: '🚀' },
-                      { id: 'air', label: t('onFinal'), icon: '🎯' },
+                      { id: 'ground', label: t('onCat'), icon: 'carrier' },
+                      { id: 'air', label: t('onFinal'), icon: 'target' },
                     ]
                   : [
-                      { id: 'ground', label: t('onRunway'), icon: '🛫' },
-                      { id: 'air', label: t('inAir'), icon: '☁️' },
+                      { id: 'ground', label: t('onRunway'), icon: 'plane' },
+                      { id: 'air', label: t('inAir'), icon: 'cloud' },
                     ]
               }
             />
           </div>
-        </section>
-
-        {/* flight feel */}
-        <section className="mb-8">
-          <h2 className={H2}>{t('feelTitle')}</h2>
-          <div className="rounded-md bg-slate-900/60 p-5 ring-1 ring-white/10">
-            <div className="flex flex-wrap items-center gap-6">
-              <label className="min-w-[240px] flex-1">
-                <div className="mb-1 flex items-baseline justify-between font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  <span>🔄 {t('turnAmount')}</span>
-                  <span className="text-sky-200">×{sandbox.turn.toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={2.2}
-                  step={0.05}
-                  value={sandbox.turn}
-                  onChange={(e) => onSandbox({ ...sandbox, turn: parseFloat(e.target.value) })}
-                  className="h-5 w-full cursor-pointer accent-sky-400"
-                />
-                <div className="mt-1 flex justify-between text-[10px] uppercase tracking-wider text-slate-500">
-                  <span>{t2('heavy', 'pesado')}</span>
-                  <span>{t2('standard', 'estándar')}</span>
-                  <span>{t2('fighter sharp', 'caza')}</span>
-                </div>
-              </label>
-              <p className="max-w-md text-xs text-slate-400">{t('turnHint')}</p>
+          <div className="sm:col-span-2">
+            <h2 className={H2}>{t('feelTitle')}</h2>
+            <div className="rounded-md bg-slate-900/60 p-5 ring-1 ring-white/10">
+              <div className="flex flex-wrap items-center gap-6">
+                <label className="min-w-[240px] flex-1">
+                  <div className="mb-1 flex items-baseline justify-between font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    <span className="flex items-center gap-1.5"><Ico name="refresh" size={12} />{t('turnAmount')}</span>
+                    <span className="text-sky-200">×{sandbox.turn.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.4}
+                    max={3}
+                    step={0.05}
+                    value={sandbox.turn}
+                    onChange={(e) => onSandbox({ ...sandbox, turn: parseFloat(e.target.value) })}
+                    className="h-5 w-full cursor-pointer accent-sky-400"
+                  />
+                  <div className="mt-1 flex justify-between text-[10px] uppercase tracking-wider text-slate-500">
+                    <span>{t2('heavy', 'pesado')}</span>
+                    <span>{t2('standard', 'estándar')}</span>
+                    <span>{t2('fighter sharp', 'caza')}</span>
+                  </div>
+                </label>
+                <p className="max-w-md text-xs text-slate-400">{t('turnHint')}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -464,7 +460,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
             }`}
           >
             <div className="mb-1 flex flex-wrap items-center gap-3">
-              <span className="text-2xl">🧪</span>
+              <Ico name="tune" size={24} className="text-emerald-300" />
               <span className="text-xl font-bold">{t('sandbox')}</span>
               <span
  className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
@@ -477,10 +473,10 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
             <p className="max-w-3xl text-sm text-slate-300">{t('sandboxText')}</p>
             {sb && (
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-emerald-200">
-                <span className="rounded-lg bg-emerald-400/15 px-2 py-1">🛡 {t('sbGod')}</span>
-                <span className="rounded-lg bg-emerald-400/15 px-2 py-1">⛽ {t('sbFuel')}</span>
-                <span className="rounded-lg bg-emerald-400/15 px-2 py-1">✈ 0 cr</span>
-                <span className="rounded-lg bg-emerald-400/15 px-2 py-1">🎚 {t('tuner')} (U)</span>
+                <span className="rounded-lg bg-emerald-400/15 px-2 py-1"><Ico name="shield" size={12} className="mr-1 inline -mt-0.5"/>{t('sbGod')}</span>
+                <span className="rounded-lg bg-emerald-400/15 px-2 py-1"><Ico name="fuel" size={12} className="mr-1 inline -mt-0.5"/>{t('sbFuel')}</span>
+                <span className="rounded-lg bg-emerald-400/15 px-2 py-1"><Ico name="plane" size={12} className="mr-1 inline -mt-0.5"/>0 cr</span>
+                <span className="rounded-lg bg-emerald-400/15 px-2 py-1"><Ico name="sliders" size={12} className="mr-1 inline -mt-0.5"/>{t('tuner')} (U)</span>
               </div>
             )}
           </button>
@@ -502,8 +498,8 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox, o
                 : 'cursor-not-allowed bg-slate-700 text-slate-400'
             }`}
           >
-            {contractMode ? t('flyMission') : t('startEngines')}{sb ? ' 🧪' : ''}
-            <span className="">➜</span>
+            {contractMode ? t('flyMission') : t('startEngines')}
+            <Ico name="right" size={18} />
           </button>
         </div>
       </div>

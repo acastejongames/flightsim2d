@@ -246,12 +246,12 @@ function missionPanel(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
     if (next) {
       const km = Math.abs(next.x - sim.x) / 1000;
       ctx.fillStyle = 'rgba(190,210,235,0.9)';
-      ctx.fillText(`${next.x < sim.x ? '◀' : '▶'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + 12, y + 84);
+      ctx.fillText(`${next.x < sim.x ? '<' : '>'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + 12, y + 84);
     } else if (m.landingAirport !== null) {
       const ap = getAirport(m.landingAirport);
       const km = Math.abs(ap.x - sim.x) / 1000;
       ctx.fillStyle = '#ffd24a';
-      ctx.fillText(`${ap.name} ${ap.x < sim.x ? '◀' : '▶'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + 12, y + 84);
+      ctx.fillText(`${ap.name} ${ap.x < sim.x ? '<' : '>'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + 12, y + 84);
     }
   }
   ctx.textAlign = 'right';
@@ -273,7 +273,7 @@ function weatherPanel(ctx: CanvasRenderingContext2D, W: number, y0: number, sim:
   ctx.font = `700 12px ${SANS}`;
   ctx.fillStyle = '#e8f1ff';
   ctx.textAlign = 'left';
-  ctx.fillText(`${wx.preset.icon} ${lang === 'es' ? wx.preset.es : wx.preset.en}`, x + 12, y + 36);
+  ctx.fillText(`${lang === 'es' ? wx.preset.es : wx.preset.en}`, x + 12, y + 36);
 
   // wind
   const head = sim.wind.head * 1.944;
@@ -607,7 +607,7 @@ function missionBannerDraw(ctx: CanvasRenderingContext2D, W: number, H: number, 
   ctx.fillStyle = '#ffd24a';
   const wxName = lang === 'es' ? sim.weather.preset.es : sim.weather.preset.en;
   ctx.fillText(
-    `${sim.weather.preset.icon} ${wxName}  ·  ${t('reward')} ${m.money} cr / ${m.xp} XP  ·  ${t('difficulty')} ${'★'.repeat(m.difficulty)}`,
+    `${wxName}  ·  ${t('reward')} ${m.money} cr / ${m.xp} XP  ·  ${t('difficulty')} ${m.difficulty}/5`,
     W / 2,
     y + 100,
   );
@@ -709,7 +709,7 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
       ctx.font = `700 12px ${MONO}`;
       ctx.fillStyle = r.carrier ? '#ffd24a' : '#8fd0ff';
       const km = Math.abs(r.dx) / 1000;
-      ctx.fillText(`${r.dx < 0 ? '◀' : '▶'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + w - 14, y);
+      ctx.fillText(`${r.dx < 0 ? '<' : '>'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + w - 14, y);
     });
   }
 
@@ -857,7 +857,7 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
     const cw = 74;
     const gearDown = sim.gear > 0.95;
     const gearMove = sim.gear > 0.05 && sim.gear < 0.95;
-    chip(ctx, gearMove ? 'GEAR ···' : gearDown ? 'GEAR ▼' : 'GEAR ▲', nx, y + 56, cw, gearDown || gearMove, gearMove ? '#ffc233' : '#7dffa6');
+    chip(ctx, gearMove ? 'GEAR ···' : gearDown ? 'GEAR DN' : 'GEAR UP', nx, y + 56, cw, gearDown || gearMove, gearMove ? '#ffc233' : '#7dffa6');
     chip(ctx, `FLAPS ${['0', '½', 'F'][sim.flaps]}`, nx + cw + 6, y + 56, 76, sim.flaps > 0, '#8fd0ff');
     chip(ctx, 'HOOK', nx, y + 80, cw, sim.hook, '#ffd24a');
     chip(ctx, sim.parked || sim.input.brake || sim.airbrake > 0.5 ? 'BRAKE' : 'BRAKE', nx + cw + 6, y + 80, 76, sim.parked || sim.input.brake, '#ff7a6b');

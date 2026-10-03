@@ -48,7 +48,7 @@ function SbSlider({
 }) {
   return (
     <label className="block">
-      <div className="flex items-baseline justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+      <div className="flex items-baseline justify-between font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
         <span>{label}</span>
         <span className="text-sky-200">{fmt(value)}</span>
       </div>
@@ -305,7 +305,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
   const touchBtn = (key: TouchKey, label: string, cls = '') => (
     <button
-      className={`select-none touch-none rounded-2xl bg-white/15 px-4 py-3 text-lg font-bold text-white ring-1 ring-white/25 backdrop-blur active:bg-white/35 ${cls}`}
+ className={`select-none touch-none rounded-sm bg-white/15 px-4 py-3 text-lg font-bold text-white ring-1 ring-white/25 active:bg-white/35 ${cls}`}
       onPointerDown={(e) => {
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
         touchRef.current[key] = true;
@@ -318,7 +318,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
   );
   const actBtn = (label: string, fn: (s: Sim) => void) => (
     <button
-      className="select-none touch-none rounded-xl bg-white/15 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/25 backdrop-blur active:bg-white/35"
+    className="select-none touch-none rounded-sm bg-white/15 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/25 active:bg-white/35"
       onPointerDown={() => simRef.current && fn(simRef.current)}
     >
       {label}
@@ -336,20 +336,20 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 gap-2">
         <button
           onClick={() => setPaused(!paused)}
-          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 backdrop-blur transition hover:bg-slate-800/80"
+          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
           {paused ? `▶ ${t('resume')}` : `❚❚ ${t('pause')}`}
         </button>
         <button
           onClick={() => setMuted(!muted)}
-          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 backdrop-blur transition hover:bg-slate-800/80"
+          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
           {muted ? '🔇' : '🔊'}
         </button>
         {settings.sandbox?.on && (
           <button
             onClick={() => setShowTuner((v) => !v)}
-            className={`pointer-events-auto rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 backdrop-blur transition ${
+ className={`pointer-events-auto rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 ${
               showTuner ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-slate-900/70 text-slate-100 ring-white/15 hover:bg-slate-800/80'
             }`}
           >
@@ -358,7 +358,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
         )}
         <button
           onClick={endFlight}
-          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 backdrop-blur transition hover:bg-slate-800/80"
+          className="pointer-events-auto rounded-full bg-slate-900/70 px-3.5 py-1.5 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
         >
           ⏹ {t('endFlight')}
         </button>
@@ -384,15 +384,15 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             {actBtn('SMOKE', (s) => s.toggleSmoke())}
             {actBtn('TIME', () => setWarp((w) => { const n = w >= 4 ? 1 : w * 2; warpRef.current = n; return n; }))}
             {actBtn('RESET', (s) => s.respawn())}
-            {touchBtn('rudL', '◀ R', '!px-3 !py-2 !text-xs !rounded-xl')}
-            {touchBtn('rudR', 'R ▶', '!px-3 !py-2 !text-xs !rounded-xl')}
-            {touchBtn('brake', 'BRK', '!px-3 !py-2 !text-xs !rounded-xl')}
+            {touchBtn('rudL', '◀ R', '!px-3 !py-2 !text-xs !rounded-sm')}
+            {touchBtn('rudR', 'R ▶', '!px-3 !py-2 !text-xs !rounded-sm')}
+            {touchBtn('brake', 'BRK', '!px-3 !py-2 !text-xs !rounded-sm')}
           </div>
         </>
       )}
 
       {settings.sandbox?.on && showTuner && (
-        <div className="absolute bottom-3 right-3 top-16 z-20 w-[19.5rem] max-w-[86vw] overflow-y-auto rounded-2xl bg-slate-950/85 p-3 text-slate-100 ring-1 ring-emerald-300/30 backdrop-blur">
+        <div className="absolute bottom-3 right-3 top-16 z-20 w-[19.5rem] max-w-[86vw] overflow-y-auto rounded-sm bg-slate-950/85 p-3 text-slate-100 ring-1 ring-emerald-300/30 ">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-300">🧪 {t('tuner')}</div>
             <button onClick={() => setShowTuner(false)} className="rounded-lg bg-white/10 px-2 py-0.5 text-xs font-bold hover:bg-white/20">
@@ -402,13 +402,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           <p className="mb-3 text-[10px] leading-snug text-slate-400">{t('sbHint')}</p>
 
           <div className="mb-3">
-            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('sbPreset')}</div>
+            <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t('sbPreset')}</div>
             <div className="grid grid-cols-3 gap-1">
               {WEATHERS.map((w) => (
                 <button
-                  key={w.id}
+ key={w.id}
                   onClick={() => applyTune(tuneFromPreset(tune, w.id))}
-                  className={`rounded-lg px-1 py-1.5 text-[10px] font-bold leading-tight ring-1 transition ${
+ className={`rounded-lg px-1 py-1.5 text-[10px] font-bold leading-tight ring-1 ${
                     tune.weather === w.id ? 'bg-sky-500 text-slate-950 ring-sky-300' : 'bg-white/5 text-slate-200 ring-white/10 hover:bg-white/15'
                   }`}
                 >
@@ -420,13 +420,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           </div>
 
           <div className="mb-3">
-            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('todTitle')}</div>
+            <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t('todTitle')}</div>
             <div className="grid grid-cols-4 gap-1">
               {(['dawn', 'day', 'dusk', 'night'] as TimeOfDay[]).map((id) => (
                 <button
-                  key={id}
+ key={id}
                   onClick={() => applyTune({ ...tune, tod: id })}
-                  className={`rounded-lg px-1 py-1.5 text-[10px] font-bold ring-1 transition ${
+ className={`rounded-lg px-1 py-1.5 text-[10px] font-bold ring-1 ${
                     tune.tod === id ? 'bg-amber-300 text-slate-950 ring-amber-200' : 'bg-white/5 text-slate-200 ring-white/10 hover:bg-white/15'
                   }`}
                 >
@@ -437,6 +437,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           </div>
 
           <div className="space-y-2.5">
+            <SbSlider
+              label={`🔄 ${t('turnAmount')}`}
+              value={tune.turn}
+              {...SANDBOX_LIMITS.turn}
+              fmt={(v) => `×${v.toFixed(2)}`}
+              onChange={(v) => applyTune({ ...tune, turn: v })}
+            />
             <SbSlider
               label={t('sbWind')}
               value={tune.wx}
@@ -471,7 +478,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           <div className="mt-3 grid grid-cols-2 gap-1.5">
             <button
               onClick={() => applyTune({ ...tune, god: !tune.god })}
-              className={`rounded-xl px-2 py-2 text-[10px] font-bold uppercase ring-1 transition ${
+ className={`rounded-sm px-2 py-2 text-[10px] font-bold uppercase ring-1 ${
                 tune.god ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/15'
               }`}
             >
@@ -479,7 +486,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             </button>
             <button
               onClick={() => applyTune({ ...tune, fuel: !tune.fuel })}
-              className={`rounded-xl px-2 py-2 text-[10px] font-bold uppercase ring-1 transition ${
+ className={`rounded-sm px-2 py-2 text-[10px] font-bold uppercase ring-1 ${
                 tune.fuel ? 'bg-emerald-400 text-slate-950 ring-emerald-300' : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/15'
               }`}
             >
@@ -490,13 +497,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
           <div className="mt-1.5 grid grid-cols-2 gap-1.5">
             <button
               onClick={() => applyTune(tuneFromPreset({ ...SANDBOX_DEFAULT, on: tune.on, tod: tune.tod }, 'clear'))}
-              className="rounded-xl bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
+              className="rounded-sm bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
             >
               ↺ {t('sbReset')}
             </button>
             <button
               onClick={() => simRef.current?.respawn()}
-              className="rounded-xl bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
+              className="rounded-sm bg-white/10 px-2 py-2 text-[10px] font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
             >
               ✈ {t('respawn')}
             </button>
@@ -523,18 +530,18 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {crashed && !paused && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
-          <div className="flex items-center gap-3 rounded-2xl bg-slate-950/85 px-5 py-3 ring-1 ring-white/15 backdrop-blur">
+          <div className="flex items-center gap-3 rounded-sm bg-slate-950/85 px-5 py-3 ring-1 ring-white/15 ">
             <span className="text-sm font-bold text-red-300">{t('crashed')}</span>
             <button
               onClick={() => {
                 simRef.current?.respawn();
                 setCrashed(false);
               }}
-              className="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
+              className="rounded-sm bg-white/10 px-4 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
             >
               ↺ {t('respawn')}
             </button>
-            <button onClick={endFlight} className="rounded-xl bg-sky-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-sky-400">
+            <button onClick={endFlight} className="rounded-sm bg-sky-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-sky-400">
               ⏹ {t('endFlight')}
             </button>
           </div>
@@ -543,9 +550,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {missionDone && !crashed && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
-          <div className="flex items-center gap-3 rounded-2xl bg-emerald-950/85 px-5 py-3 ring-1 ring-emerald-300/30 backdrop-blur">
+          <div className="flex items-center gap-3 rounded-sm bg-emerald-950/85 px-5 py-3 ring-1 ring-emerald-300/30 ">
             <span className="text-sm font-bold text-emerald-200">✓ {t('missionComplete')}</span>
-            <button onClick={endFlight} className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-300">
+            <button onClick={endFlight} className="rounded-sm bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-300">
               {t('debrief')} →
             </button>
           </div>
@@ -554,9 +561,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
       {missionFailed && !crashed && !missionDone && (
         <div className="absolute inset-x-0 bottom-24 z-20 flex justify-center">
-          <div className="flex items-center gap-3 rounded-2xl bg-red-950/85 px-5 py-3 ring-1 ring-red-300/30 backdrop-blur">
+          <div className="flex items-center gap-3 rounded-sm bg-red-950/85 px-5 py-3 ring-1 ring-red-300/30 ">
             <span className="text-sm font-bold text-red-200">✕ {t('missionFailed')}</span>
-            <button onClick={endFlight} className="rounded-xl bg-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/25">
+            <button onClick={endFlight} className="rounded-sm bg-white/15 px-4 py-2 text-xs font-bold text-white hover:bg-white/25">
               {t('debrief')} →
             </button>
           </div>
@@ -564,8 +571,8 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       )}
 
       {paused && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-3xl bg-slate-900/90 p-6 shadow-2xl ring-1 ring-white/10">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/60 p-4 -sm">
+          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-md bg-slate-900/90 p-6 ring-1 ring-white/10">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-extrabold tracking-tight text-white">{t('paused')}</h2>
@@ -581,13 +588,13 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                     setCrashed(false);
                     setPaused(false);
                   }}
-                  className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/20"
+                  className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
                 >
                   ↺ {t('respawn')}
                 </button>
                 <button
                   onClick={endFlight}
-                  className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/20"
+                  className="rounded-sm bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white/20"
                 >
                   ⏹ {t('endFlight')}
                 </button>
@@ -597,22 +604,22 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
                       setShowTuner(true);
                       setPaused(false);
                     }}
-                    className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 ring-1 ring-emerald-300/40 transition hover:bg-emerald-300"
+                    className="rounded-sm bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 ring-1 ring-emerald-300/40 hover:bg-emerald-300"
                   >
                     🧪 {t('tuner')}
                   </button>
                 )}
                 <button
                   onClick={() => setPaused(false)}
-                  className="rounded-xl bg-sky-500 px-5 py-2 text-sm font-bold text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400"
+                  className="rounded-sm bg-sky-500 px-5 py-2 text-sm font-bold text-slate-950 hover:bg-sky-400"
                 >
                   {t('resume')}
                 </button>
               </div>
             </div>
             {run && (
-              <div className="mb-4 rounded-2xl bg-black/40 p-4 ring-1 ring-white/10">
-                <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('objective')}</div>
+              <div className="mb-4 rounded-sm bg-black/40 p-4 ring-1 ring-white/10">
+                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.3em] text-sky-300/80">{t('objective')}</div>
                 <div className="text-sm font-semibold text-sky-200">{run.objective(lang)}</div>
                 <div className="mt-1 text-xs text-slate-400">
                   {lang === 'es' ? run.mission.briefEs : run.mission.briefEn}

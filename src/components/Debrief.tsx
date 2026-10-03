@@ -26,7 +26,7 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
   return (
     <div className="relative min-h-screen w-full overflow-y-auto bg-slate-950 text-white">
       <div className="pointer-events-none fixed inset-0 bg-cover bg-center opacity-35" style={{ backgroundImage: "url('images/debrief.jpg')" }} />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/80 to-slate-950" />
+      <div className="pointer-events-none fixed inset-0 bg-slate-950/85" />
       <div className="relative mx-auto flex min-h-screen max-w-4xl flex-col px-5 py-10 sm:px-8">
         <div className="mb-6">
           <div className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{t('debrief')}</div>
@@ -45,7 +45,7 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
         </div>
 
         {award?.rankUp && (
-          <div className="mb-5 rounded-3xl bg-gradient-to-r from-amber-400/25 to-sky-400/20 p-5 ring-1 ring-amber-300/40">
+          <div className="mb-5 rounded-md bg-amber-400/10 p-5 ring-1 ring-amber-300/40">
             <div className="text-lg font-black text-amber-200">🎖 {t('rankUp')}</div>
             <div className="text-2xl font-black">{lang === 'es' ? award.newRank.es : award.newRank.en}</div>
           </div>
@@ -53,24 +53,24 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
 
         <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
           {!award ? (
-            <div className="rounded-3xl bg-emerald-950/60 p-5 ring-1 ring-emerald-300/30 backdrop-blur">
+            <div className="rounded-md bg-emerald-950/60 p-5 ring-1 ring-emerald-300/30 ">
               <div className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">🧪 {t('sandbox')}</div>
               <p className="text-sm text-emerald-100">{t('sbNoReward')}</p>
             </div>
           ) : (
-          <div className="rounded-3xl bg-slate-900/75 p-5 ring-1 ring-white/10 backdrop-blur">
-            <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('earned')}</div>
+          <div className="rounded-md bg-slate-900/75 p-5 ring-1 ring-white/10 ">
+            <div className="mb-3 flex items-center gap-3 font-mono text-[11px] font-bold uppercase tracking-[0.3em] text-sky-300/80 after:h-px after:flex-1 after:bg-sky-300/20">{t('earned')}</div>
             <div className="mb-4 flex items-end gap-6">
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('money')}</div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t('money')}</div>
                 <div className="text-3xl font-black text-amber-300">+{award.money.toLocaleString()}</div>
               </div>
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('xp')}</div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t('xp')}</div>
                 <div className="text-3xl font-black text-sky-300">+{award.xp.toLocaleString()}</div>
               </div>
               {award.multiplier > 1 && (
-                <div className="rounded-xl bg-emerald-400/15 px-3 py-1.5 text-sm font-black text-emerald-200">
+                <div className="rounded-sm bg-emerald-400/15 px-3 py-1.5 text-sm font-black text-emerald-200">
                   ×{award.multiplier.toFixed(1)} {t('streak')}
                 </div>
               )}
@@ -87,20 +87,20 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
               ))}
             </div>
             <div className="mt-4">
-              <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <div className="mb-1 flex justify-between font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
                 <span>{lang === 'es' ? rank.def.es : rank.def.en}</span>
                 <span>{rank.next ? `${profile.xp}/${rank.next.xp} XP` : 'MAX'}</span>
               </div>
               <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-gradient-to-r from-amber-300 to-sky-400" style={{ width: `${rank.progress * 100}%` }} />
+                <div className="h-full rounded-full bg-amber-300" style={{ width: `${rank.progress * 100}%` }} />
               </div>
             </div>
           </div>
           )}
 
           <div className="space-y-5">
-            <div className="rounded-3xl bg-slate-900/75 p-5 ring-1 ring-white/10 backdrop-blur">
-              <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('flightSummary')}</div>
+            <div className="rounded-md bg-slate-900/75 p-5 ring-1 ring-white/10 ">
+              <div className="mb-3 flex items-center gap-3 font-mono text-[11px] font-bold uppercase tracking-[0.3em] text-sky-300/80 after:h-px after:flex-1 after:bg-sky-300/20">{t('flightSummary')}</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {(
                   [
@@ -114,7 +114,7 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
                     ['Score', String(Math.round(summary.score))],
                   ] as const
                 ).map(([k, v]) => (
-                  <div key={k} className="flex justify-between rounded-xl bg-white/5 px-3 py-2">
+                  <div key={k} className="flex justify-between rounded-sm bg-white/5 px-3 py-2">
                     <span className="text-slate-400">{k}</span>
                     <span className="font-bold">{v}</span>
                   </div>
@@ -123,11 +123,11 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
             </div>
 
             {award && award.newMedals.length > 0 && (
-              <div className="rounded-3xl bg-amber-400/10 p-5 ring-1 ring-amber-300/30">
+              <div className="rounded-md bg-amber-400/10 p-5 ring-1 ring-amber-300/30">
                 <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-amber-200">{t('newMedals')}</div>
                 <div className="flex flex-wrap gap-3">
                   {award.newMedals.map((m) => (
-                    <div key={m.id} className="flex items-center gap-2 rounded-2xl bg-slate-950/50 px-3 py-2 ring-1 ring-amber-300/30">
+                    <div key={m.id} className="flex items-center gap-2 rounded-sm bg-slate-950/50 px-3 py-2 ring-1 ring-amber-300/30">
                       <span className="text-2xl">{m.icon}</span>
                       <div>
                         <div className="text-sm font-bold">{lang === 'es' ? m.es : m.en}</div>
@@ -144,17 +144,17 @@ export default function Debrief({ profile, summary, award, sandbox, onAgain, onN
         <div className="mt-8 flex flex-wrap gap-3">
           <button
             onClick={onAgain}
-            className="rounded-2xl bg-gradient-to-r from-sky-400 to-cyan-300 px-6 py-3 text-sm font-black text-slate-950 shadow-lg shadow-sky-500/25 transition hover:scale-[1.02]"
+            className="rounded-sm bg-sky-400 px-6 py-3 text-sm font-black text-slate-950 "
           >
             ✈ {t('flyAgain')}
           </button>
-          <button onClick={onNewContract} className="rounded-2xl bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 transition hover:bg-white/20">
+          <button onClick={onNewContract} className="rounded-sm bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
             🎲 {t('reroll')}
           </button>
-          <button onClick={onHangar} className="rounded-2xl bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 transition hover:bg-white/20">
+          <button onClick={onHangar} className="rounded-sm bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
             🛠 {t('hangar')}
           </button>
-          <button onClick={onMenu} className="rounded-2xl bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 transition hover:bg-white/20">
+          <button onClick={onMenu} className="rounded-sm bg-white/10 px-6 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
             ☰ {t('toMenu')}
           </button>
         </div>

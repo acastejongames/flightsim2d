@@ -41,6 +41,12 @@ export interface SandboxTune {
   /** live weather preset (drives thunder cells, rain vs snow, wetness) */
   weather: WeatherId;
   tod: TimeOfDay;
+  /**
+   * Turn modifier: multiplies every airframe's control sensitivity. Below 1 is
+   * stately and airliner-like, above 1 is fighter-sharp. Applies to fighters
+   * and ordinary aircraft alike.
+   */
+  turn: number;
 }
 
 export const SANDBOX_DEFAULT: SandboxTune = {
@@ -58,6 +64,7 @@ export const SANDBOX_DEFAULT: SandboxTune = {
   temp: 18,
   weather: 'clear',
   tod: 'day',
+  turn: 1,
 };
 
 const KEY = 'skybound.sandbox.v1';
@@ -84,6 +91,7 @@ export function clampTune(t: SandboxTune): SandboxTune {
     temp: num(t.temp, SANDBOX_DEFAULT.temp, -30, 45),
     weather: ids.includes(t.weather) ? t.weather : 'clear',
     tod: tods.includes(t.tod) ? t.tod : 'day',
+    turn: num(t.turn, SANDBOX_DEFAULT.turn, 0.5, 2.2),
   };
 }
 
@@ -128,6 +136,7 @@ export const visToSlider = (m: number): number => Math.round((Math.log(Math.max(
 export const sliderToVis = (v: number): number => Math.round(200 * Math.pow(40000 / 200, Math.min(100, Math.max(0, v)) / 100));
 
 export const SANDBOX_LIMITS = {
+  turn: { min: 0.5, max: 2.2, step: 0.05 },
   wx: { min: -18, max: 18, step: 0.5 },
   wz: { min: -22, max: 22, step: 0.5 },
   gust: { min: 0, max: 1.5, step: 0.05 },

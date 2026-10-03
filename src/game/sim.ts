@@ -456,6 +456,16 @@ export class Sim {
     this.msgs = [];
   }
 
+  /**
+   * Effective control sensitivity: the airframe's own character (fighters are
+   * sharp, transports are heavy) times the player's turn modifier.
+   */
+  get sensEff(): number {
+    // the turn modifier is a flight-feel setting, so it applies in career
+    // flights too, not only while the sandbox switch is on
+    return (this.spec.sens ?? 1) * (this.sandbox ? this.sandbox.turn : 1);
+  }
+
   // ---------------------------------------------------------------- sandbox
   /** Indestructible while the sandbox god switch is on. */
   get god(): boolean {
@@ -575,8 +585,9 @@ export class Sim {
     this.turnT = 0;
     // a reversal is much crisper than it used to be, and fast jets still carve
     // wider arcs than slow ones
-    // fighters snap through a reversal, heavy transports wallow through it
-    this.turnDur = clamp((2.9 - this.ias * 0.01) / (this.spec.sens ?? 1), 0.8, 3.4);
+    // fighters snap through a reversal, heavy transports wallow through it;
+    // the speed term is gentle so the turn modifier keeps a useful range
+    this.turnDur = clamp((2.6 - this.ias * 0.004) / this.sensEff, 0.55, 3.6);
   }
 
   /** Autopilot: capture the current altitude and hold it. */
@@ -843,7 +854,7 @@ export class Sim {
       }
     }
     // fighters are "sensitive": the servo drives the elevator harder
-    const sensRate = s.sens ?? 1;
+    const sensRate = this.sensEff;
     const rate = (Math.abs(pitchCmd) > 0.01 ? 3 : 4) * sensRate;
     this.elev += clamp(pitchCmd - this.elev, -rate * h, rate * h);
 
@@ -1018,7 +1029,7 @@ export class Sim {
     this.u += (A.Fx / m) * h;
     this.vy += (A.Fy / m - G) * h;
     // evasive high-g turns: agile airframes hold their energy better
-    if (this.g > 4 && (s.sens ?? 1) > 1) this.u += ((s.sens ?? 1) - 1) * 0.35 * h;
+    if (this.g > 4 && this.sensEff > 1) this.u += (this.sensEff - 1) * 0.35 * h;
 
     const bank = this.turning && this.turnKind === 'air' ? 1.0 * Math.sin(Math.PI * this.turnT) : 0;
     const cosB = Math.cos(bank);
@@ -1026,7 +1037,7 @@ export class Sim {
     const qq = Math.max(q, 1);
     const W = m * G;
     const qf = Math.max(q / (q + 0.5 * 1.225 * Math.pow(0.8 * s.vs, 2)), 0.05);
-    const sens = s.sens ?? 1;
+    const sens = this.sensEff;
     const Kq = s.pitchK * sens * qf;
     const Cq = 1.7 * Math.sqrt(Kq) + 0.25;
 

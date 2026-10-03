@@ -57,7 +57,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
   return (
     <div className="relative min-h-screen w-full overflow-y-auto bg-slate-950 text-white">
       <div className="pointer-events-none fixed inset-0 bg-cover bg-center opacity-40" style={{ backgroundImage: "url('images/hangar.jpg')" }} />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/75 to-slate-950" />
+      <div className="pointer-events-none fixed inset-0 bg-slate-950/85" />
       <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-5 py-8 sm:px-8">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -75,7 +75,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <div className="inline-flex overflow-hidden rounded-2xl ring-1 ring-white/15">
+            <div className="inline-flex overflow-hidden rounded-sm ring-1 ring-white/15">
               {(
                 [
                   ['aircraft', `✈ ${t('aircraftTitle').slice(4)}`],
@@ -84,9 +84,9 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                 ] as const
               ).map(([id, label]) => (
                 <button
-                  key={id}
+ key={id}
                   onClick={() => setTab(id)}
-                  className={`px-4 py-2.5 text-xs font-bold uppercase transition ${
+ className={`px-4 py-2.5 text-xs font-bold uppercase ${
                     tab === id ? 'bg-sky-500 text-slate-950' : 'bg-white/5 text-slate-300 hover:bg-white/10'
                   }`}
                 >
@@ -94,7 +94,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                 </button>
               ))}
             </div>
-            <button onClick={onBack} className="rounded-2xl bg-white/10 px-5 py-2.5 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
+            <button onClick={onBack} className="rounded-sm bg-white/10 px-5 py-2.5 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
               ← {t('back')}
             </button>
           </div>
@@ -109,8 +109,8 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
               const canBuy = sb || (profile.money >= frame.price && rank.index >= frame.rank);
               const spec = getAircraft(a.id);
               return (
-                <div key={a.id} className={`rounded-3xl p-4 ring-1 backdrop-blur ${selected ? 'bg-sky-500/15 ring-sky-300/50' : 'bg-slate-900/70 ring-white/10'}`}>
-                  <div className="flex justify-center rounded-2xl bg-gradient-to-b from-sky-400/20 to-transparent py-2">
+                <div key={a.id} className={`rounded-md p-4 ring-1 ${selected ? 'bg-sky-500/15 ring-sky-300/50' : 'bg-slate-900/70 ring-white/10'}`}>
+                  <div className="flex justify-center rounded-sm bg-sky-400/10 py-2">
                     <AircraftPreview spec={spec} />
                   </div>
                   <div className="mt-2 flex items-baseline justify-between">
@@ -121,13 +121,13 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                   <div className="mt-3 flex items-center justify-between">
                     {owned ? (
                       selected ? (
-                        <span className="rounded-xl bg-sky-400/20 px-3 py-2 text-xs font-bold uppercase text-sky-200 ring-1 ring-sky-300/40">
+                        <span className="rounded-sm bg-sky-400/20 px-3 py-2 text-xs font-bold uppercase text-sky-200 ring-1 ring-sky-300/40">
                           {t('equipped')}
                         </span>
                       ) : (
                         <button
                           onClick={() => buyAircraft(a.id)}
-                          className="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
+                          className="rounded-sm bg-white/10 px-4 py-2 text-xs font-bold uppercase ring-1 ring-white/15 hover:bg-white/20"
                         >
                           {t('equip')}
                         </button>
@@ -136,9 +136,9 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                       <button
                         onClick={() => buyAircraft(a.id)}
                         disabled={!canBuy}
-                        className={`rounded-xl px-4 py-2 text-xs font-bold uppercase ring-1 transition ${
+ className={`rounded-sm px-4 py-2 text-xs font-bold uppercase ring-1 ${
                           canBuy
-                            ? 'bg-gradient-to-r from-amber-300 to-amber-200 text-slate-950 ring-amber-200/50 hover:scale-[1.02]'
+                            ? 'bg-amber-300 text-slate-950 ring-amber-200/50 '
                             : 'cursor-not-allowed bg-white/5 text-slate-400 ring-white/10'
                         }`}
                       >
@@ -168,7 +168,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
               const cost = sb ? 0 : upgradeCost(u, lvl);
               const afford = sb || profile.money >= cost;
               return (
-                <div key={u.id} className="rounded-3xl bg-slate-900/70 p-4 ring-1 ring-white/10 backdrop-blur">
+                <div key={u.id} className="rounded-md bg-slate-900/70 p-4 ring-1 ring-white/10 ">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{u.icon}</span>
@@ -189,11 +189,11 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                   <button
                     onClick={() => install(u)}
                     disabled={maxed || !afford}
-                    className={`mt-3 w-full rounded-xl px-4 py-2 text-xs font-bold uppercase ring-1 transition ${
+ className={`mt-3 w-full rounded-sm px-4 py-2 text-xs font-bold uppercase ring-1 ${
                       maxed
                         ? 'cursor-default bg-emerald-400/15 text-emerald-200 ring-emerald-300/30'
                         : afford
-                          ? 'bg-gradient-to-r from-sky-400 to-cyan-300 text-slate-950 ring-sky-200/40 hover:scale-[1.01]'
+                          ? 'bg-sky-400 text-slate-950 ring-sky-200/40 '
                           : 'cursor-not-allowed bg-white/5 text-slate-400 ring-white/10'
                     }`}
                   >
@@ -207,7 +207,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
 
         {tab === 'logbook' && (
           <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-            <div className="grid grid-cols-2 gap-3 rounded-3xl bg-slate-900/70 p-5 ring-1 ring-white/10 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 rounded-md bg-slate-900/70 p-5 ring-1 ring-white/10 sm:grid-cols-3">
               {(
                 [
                   [t('flights'), st.flights],
@@ -224,24 +224,24 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                   [t('medals'), `${profile.medals.length}/${MEDALS.length}`],
                 ] as const
               ).map(([label, value]) => (
-                <div key={label} className="rounded-2xl bg-white/5 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+                <div key={label} className="rounded-sm bg-white/5 p-3">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
                   <div className="text-lg font-black">{value}</div>
                 </div>
               ))}
               {sb && (
-                <div className="col-span-2 rounded-2xl bg-emerald-400/10 p-3 ring-1 ring-emerald-300/30 sm:col-span-3">
+                <div className="col-span-2 rounded-sm bg-emerald-400/10 p-3 ring-1 ring-emerald-300/30 sm:col-span-3">
                   <div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">🧪 {t('cheats')}</div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => cheat({ money: profile.money + 10000 })}
-                      className="rounded-xl bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 ring-1 ring-emerald-300/40 hover:bg-emerald-300"
+                      className="rounded-sm bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 ring-1 ring-emerald-300/40 hover:bg-emerald-300"
                     >
                       {t('addMoney')}
                     </button>
                     <button
                       onClick={() => cheat({ xp: profile.xp + 5000 })}
-                      className="rounded-xl bg-sky-400 px-3 py-2 text-xs font-bold text-slate-950 ring-1 ring-sky-300/40 hover:bg-sky-300"
+                      className="rounded-sm bg-sky-400 px-3 py-2 text-xs font-bold text-slate-950 ring-1 ring-sky-300/40 hover:bg-sky-300"
                     >
                       {t('addXp')}
                     </button>
@@ -255,14 +255,14 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                           medals: MEDALS.map((m) => m.id),
                         })
                       }
-                      className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
+                      className="rounded-sm bg-white/10 px-3 py-2 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
                     >
                       🔓 {t('unlockAll')}
                     </button>
                   </div>
                 </div>
               )}
-              <div className="col-span-2 flex items-center justify-between rounded-2xl bg-white/5 p-3 sm:col-span-3">
+              <div className="col-span-2 flex items-center justify-between rounded-sm bg-white/5 p-3 sm:col-span-3">
                 <span className="text-xs text-slate-400">
                   {armed ? t('confirmReset') : t('reset')}
                 </span>
@@ -272,7 +272,7 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                     onReset(resetProfile());
                     setArmed(false);
                   }}
-                  className={`rounded-xl px-4 py-2 text-xs font-bold uppercase ring-1 transition ${
+ className={`rounded-sm px-4 py-2 text-xs font-bold uppercase ring-1 ${
                     armed ? 'bg-red-500/80 text-white ring-red-300/40' : 'bg-white/10 text-slate-300 ring-white/15 hover:bg-white/20'
                   }`}
                 >
@@ -280,16 +280,16 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
                 </button>
               </div>
             </div>
-            <div className="rounded-3xl bg-slate-900/70 p-5 ring-1 ring-white/10">
-              <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{t('medals')}</div>
+            <div className="rounded-md bg-slate-900/70 p-5 ring-1 ring-white/10">
+              <div className="mb-3 flex items-center gap-3 font-mono text-[11px] font-bold uppercase tracking-[0.3em] text-sky-300/80 after:h-px after:flex-1 after:bg-sky-300/20">{t('medals')}</div>
               <div className="grid grid-cols-3 gap-2">
                 {MEDALS.map((m) => {
                   const got = profile.medals.includes(m.id);
                   return (
                     <div
-                      key={m.id}
+ key={m.id}
                       title={lang === 'es' ? m.descEs : m.descEn}
-                      className={`rounded-2xl p-2 text-center ring-1 ${got ? 'bg-amber-400/15 ring-amber-300/40' : 'bg-white/5 ring-white/10 opacity-45'}`}
+ className={`rounded-sm p-2 text-center ring-1 ${got ? 'bg-amber-400/15 ring-amber-300/40' : 'bg-white/5 ring-white/10 opacity-45'}`}
                     >
                       <div className="text-xl">{got ? m.icon : '🔒'}</div>
                       <div className="text-[9px] font-bold uppercase leading-tight text-slate-200">{lang === 'es' ? m.es : m.en}</div>

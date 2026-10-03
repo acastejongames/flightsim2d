@@ -97,12 +97,12 @@ export default function SpriteLab({ onBack }: { onBack: () => void }) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const chip = (on: boolean) => `rounded-xl px-3 py-2 text-xs font-bold uppercase ring-1 transition ${
+  const chip = (on: boolean) => `rounded-sm px-3 py-2 text-xs font-bold uppercase ring-1 ${
     on ? 'bg-sky-500 text-slate-950 ring-sky-300' : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/15'
   }`;
   const num = (label: string, value: number, set: (v: number) => void, min: number, max: number, step: number) => (
     <label className="block">
-      <div className="flex items-baseline justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+      <div className="flex items-baseline justify-between font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
         <span>{label}</span>
         <span className="text-sky-200">{value.toFixed(2)}</span>
       </div>
@@ -131,16 +131,16 @@ export default function SpriteLab({ onBack }: { onBack: () => void }) {
               )}
             </p>
           </div>
-          <button onClick={onBack} className="rounded-2xl bg-white/10 px-5 py-2.5 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
+          <button onClick={onBack} className="rounded-sm bg-white/10 px-5 py-2.5 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
             ← {t2('Back', 'Volver')}
           </button>
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-          <canvas ref={canvasRef} className="h-[380px] w-full rounded-3xl ring-1 ring-white/10" />
-          <div className="space-y-4 rounded-3xl bg-slate-900/70 p-4 ring-1 ring-white/10">
+          <canvas ref={canvasRef} className="h-[380px] w-full rounded-md ring-1 ring-white/10" />
+          <div className="space-y-4 rounded-md bg-slate-900/70 p-4 ring-1 ring-white/10">
             <div>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">{t2('Aircraft', 'Aeronave')}</div>
+              <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t2('Aircraft', 'Aeronave')}</div>
               <div className="grid grid-cols-3 gap-2">
                 {AIRCRAFT.map((a) => (
                   <button key={a.id} onClick={() => setAcId(a.id)} className={chip(a.id === acId)}>
@@ -150,7 +150,7 @@ export default function SpriteLab({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">{t2('Pose', 'Pose')}</div>
+              <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t2('Pose', 'Pose')}</div>
               <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => setGear((g) => (g > 0.5 ? 0 : 1))} className={chip(gear > 0.5)}>
                   {t2('Gear', 'Tren')}
@@ -168,7 +168,7 @@ export default function SpriteLab({ onBack }: { onBack: () => void }) {
             {num(t2('Pitch (rad)', 'Morro (rad)'), pitch, setPitch, -0.5, 0.5, 0.01)}
             {num(t2('Zoom', 'Zoom'), zoom, setZoom, 0.4, 2.5, 0.05)}
             <div>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">{t2('Light', 'Luz')}</div>
+              <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{t2('Light', 'Luz')}</div>
               <div className="grid grid-cols-4 gap-2">
                 {(['dawn', 'day', 'dusk', 'night'] as TimeOfDay[]).map((id) => (
                   <button key={id} onClick={() => setTod(id)} className={chip(tod === id)}>

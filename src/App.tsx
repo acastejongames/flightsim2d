@@ -87,12 +87,15 @@ export default function App() {
           startAir: false,
           weather: profile.weather,
           mission: null,
-          sandbox: sandbox.on ? { ...sandbox } : null,
+          // the tuner is always passed so the turn modifier applies; the sandbox
+          // switches inside it decide whether free play, god mode and weather
+          // overrides are actually in force
+          sandbox: { ...sandbox },
         };
       const seed = Math.floor(Math.random() * 100000);
       const m = generateMission({ mode: b.mode, x: 0, seed, rankIndex: rankFor(profile.xp).index });
-      const sb: SandboxTune | null = sandbox.on ? { ...sandbox, weather: m.weather } : null;
-      if (sb) changeSandbox(sb);
+      const sb: SandboxTune = { ...sandbox, weather: m.weather };
+      changeSandbox(sb);
       start({ ...b, weather: m.weather, mission: m, sandbox: sb }, m);
     },
     [profile, sandbox, changeSandbox, start],

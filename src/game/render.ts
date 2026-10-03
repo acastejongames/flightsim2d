@@ -1,7 +1,9 @@
 import { clamp, fbm, hash, mixRGB, smoothstep } from './noise';
 import type { Sim, Particle } from './sim';
 import { CARRIER_LEN, CAT_END, CAT_START, DECK_H, TODS, WIRES, airportAt, airportsNear, terrainHeight } from './world';
-import type { Airport, TimeOfDay, ToD } from './world';
+import { DECOR, decorSprite, drawDecorSprite, preloadDecor } from './decor';
+import type { DecorKey } from './decor';
+import type { Airport, TimeOfDay, ToD, WorldMode } from './world';
 import { drawAircraft } from './sprites';
 import { drawHUD } from './hud';
 import type { HudExtra } from './hud';
@@ -58,6 +60,7 @@ export class Renderer {
     this.ctx = canvas.getContext('2d')!;
     this.tod = TODS[todId];
     this.light = this.tod.light;
+    preloadDecor(); // warm the scenery sprite cache so nothing pops in later
     for (let i = 0; i < 220; i++) {
       this.stars.push({ x: hash(i * 1.3), y: hash(i * 2.9 + 4), r: 0.5 + hash(i * 5.1) * 1.4, t: hash(i * 7.7) * 6 });
     }
@@ -528,10 +531,70 @@ export class Renderer {
     const x0 = cam.x - W / 2 / z;
     const x1 = cam.x + W / 2 / z;
     this.drawVillages(sim, x0, x1);
+    this.drawInfrastructure(sim, x0, x1);
     if (z > 0.7) this.drawTrees(sim, x0, x1);
     for (const ap of airportsNear(cam.x, 1)) {
       if (ap.x + ap.len / 2 + 400 < x0 || ap.x - ap.len / 2 - 400 > x1) continue;
       this.drawAirport(sim, ap);
+    }
+  }
+
+  /** Ambient brightness for scenery sprites (night and storm gloom dim them). */
+  private spriteBright(): number {
+    const storminess = this.mood.storm ? 0.18 : 0;
+    return clamp(0.42 + this.light[0] * 0.5 - this.mood.cover * 0.22 - storminess, 0.22, 1.05);
+  }
+
+  /**
+   * Draw a scenery sprite standing on the terrain, given its real height in
+   * metres. Returns false when there is nothing to draw (still loading).
+   */
+  private decor(key: DecorKey, wx: number, heightM: number, mode: WorldMode, opts: { flip?: boolean; ground?: number } = {}): boolean {
+    const spr = decorSprite(DECOR[key]);
+    if (!spr) return false;
+    const z = this.cam.zoom;
+    const ground = opts.ground ?? terrainHeight(wx, mode);
+    const hpx = heightM * z;
+    if (hpx < 2.5) return false;
+    const px = this.sx(wx);
+    if (px < -hpx * spr.aspect - 40 || px > this.W + hpx * spr.aspect + 40) return false;
+    drawDecorSprite(this.ctx, spr, px, this.sy(ground), hpx, {
+      flip: opts.flip,
+      bright: this.spriteBright(),
+      alpha: clamp(1 - (1 - this.mood.vis / 9000) * 0.35, 0.5, 1),
+    });
+    return true;
+  }
+
+  /** Masts and wind farms, scattered where they make sense. */
+  private drawInfrastructure(sim: Sim, x0: number, x1: number): void {
+    const mode = sim.mode;
+    const { cam } = this;
+    const z = cam.zoom;
+    if (z < 0.5) return;
+    // telecom masts: one every few km on high-ish ground
+    const mstep = 2600;
+    for (let i = Math.floor(x0 / mstep) - 1; i <= Math.floor(x1 / mstep) + 1; i++) {
+      if (hash(i * 5.7 + 11) < 0.55) continue;
+      const wx = (i + hash(i * 2.1)) * mstep;
+      const h = terrainHeight(wx, sim.mode);
+      if (h < 30 || h > 1400) continue;
+      if (airportAt(wx, 700)) continue;
+      this.decor('mast', wx, 32 + hash(i * 3.9) * 26, mode, { ground: h });
+    }
+    // wind farms: a run of turbines along windy ridges
+    const wstep = 3400;
+    for (let i = Math.floor(x0 / wstep) - 1; i <= Math.floor(x1 / wstep) + 1; i++) {
+      if (hash(i * 8.3 + 5) < 0.62) continue;
+      const cx = (i + hash(i * 4.4)) * wstep;
+      const n = 3 + Math.floor(hash(i * 6.6) * 5);
+      for (let j = 0; j < n; j++) {
+        const wx = cx + j * (55 + hash(i + j) * 40);
+        const h = terrainHeight(wx, sim.mode);
+        if (h < 90 || h > 1500) continue;
+        if (airportAt(wx, 900)) continue;
+        this.decor('turbine', wx, 62 + hash(i * 2.9 + j) * 34, mode, { ground: h, flip: hash(wx) > 0.5 });
+      }
     }
   }
 
@@ -554,6 +617,16 @@ export class Renderer {
       const conifer = h > 420 || hash(i * 4.3) > 0.62;
       const wd = ht * 0.55 * z;
       const hh = ht * z;
+      const spr = decorSprite(DECOR[conifer ? 'pine' : 'oak']);
+      if (spr) {
+        // sprites are a bit taller than the old vector trees: keep the same footprint
+        drawDecorSprite(ctx, spr, px, py, ht * 1.35 * z, {
+          bright: this.spriteBright(),
+          flip: hash(i * 9.1) > 0.5,
+          alpha: clamp(1 - (1 - this.mood.vis / 9000) * 0.35, 0.5, 1),
+        });
+        continue;
+      }
       if (conifer) {
         ctx.fillStyle = this.lit([76, 54, 34]);
         ctx.fillRect(px - 0.06 * hh, py - hh * 0.2, 0.12 * hh, hh * 0.2);
@@ -603,6 +676,18 @@ export class Renderer {
         const hh = 4 + hash(vi * 9 + j * 2.3) * 3;
         const px = this.sx(wx);
         const py = this.sy(h);
+        const hspr = decorSprite(DECOR.house);
+        if (hspr) {
+          // the artwork includes the roof, so it stands a bit taller than the walls
+          drawDecorSprite(ctx, hspr, px + (w / 2) * z, py, (hh + 3.2) * z, {
+            bright: this.spriteBright(),
+            flip: hash(vi * 3 + j * 9) > 0.5,
+            alpha: clamp(1 - (1 - this.mood.vis / 9000) * 0.35, 0.5, 1),
+          });
+          const lightOn = night && hash(vi * 3 + j) > 0.35;
+          if (lightOn) this.glowDot(px + w * 0.3 * z, py - hh * 0.6 * z, 5 * z, [255, 214, 120], 0.55);
+          continue;
+        }
         const wallC = [[232, 220, 196], [214, 196, 170], [196, 206, 214], [226, 190, 170]][Math.floor(hash(vi + j * 4.1) * 4) % 4];
         ctx.fillStyle = this.lit(wallC);
         ctx.fillRect(px, py - hh * z, w * z, hh * z);
@@ -664,8 +749,17 @@ export class Renderer {
     for (let k = 0; k < 14; k++) ctx.fillRect(tx + (6 + k * 7.9) * z, yT - 8.5 * z, 5 * z, 3.5 * z);
     ctx.fillStyle = this.lit([180, 70, 60]);
     ctx.fillRect(tx - 2 * z, yT - 14.5 * z, 124 * z, 1.5 * z);
-    // tower
+    // tower (hand-drawn ATC sprite, 38 m tall) with a beacon on top
     const tw = bx(ap.len * 0.08 + 135);
+    const atcSpr = decorSprite(DECOR.atc);
+    if (atcSpr) {
+      const hpx = 38 * z;
+      drawDecorSprite(ctx, atcSpr, tw + 2.5 * z, yT, hpx, { bright: this.spriteBright() });
+      if (night) {
+        const on = Math.floor(sim.time * 1.2) % 2 === 0;
+        this.glowDot(tw + 2.5 * z, yT - hpx, 9, on ? [255, 60, 60] : [255, 255, 255], on ? 0.9 : 0.3);
+      }
+    } else {
     ctx.fillStyle = this.lit([200, 202, 208]);
     ctx.fillRect(tw, yT - 28 * z, 5 * z, 28 * z);
     ctx.fillStyle = this.lit([70, 90, 110]);
@@ -683,6 +777,7 @@ export class Renderer {
     if (night) {
       const on = Math.floor(sim.time * 1.2) % 2 === 0;
       this.glowDot(tw + 2.5 * z, yT - 42 * z, 9, on ? [255, 60, 60] : [255, 255, 255], on ? 0.9 : 0.3);
+    }
     }
     // windsock
     const wsx = bx(ap.len / 2 - 220);

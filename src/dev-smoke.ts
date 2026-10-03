@@ -7,6 +7,7 @@ import { emptyProfile, applyUpgrades, award, rankFor } from './game/career';
 import type { FlightSummary } from './game/career';
 import { Weather, WX } from './game/weather';
 import { SANDBOX_DEFAULT, clampTune as clampTuneForTest } from './game/sandbox';
+import { DECOR } from './game/decor';
 import { getAirport } from './game/world';
 import { AIRCRAFT } from './game/aircraft';
 
@@ -366,6 +367,42 @@ console.log('\n== Sprite aircraft ==');
     }
     check('CN-235 gets airborne', !sim.grounded && sim.agl > 100, `${sim.agl.toFixed(0)} m AGL at ${sim.ias.toFixed(0)} m/s`);
   }
+}
+
+
+// ---------------------------------------------------------------- scenery & turn modifier
+console.log('\n== Scenery sprites & turn modifier ==');
+{
+  // every scenery sprite must exist and be sane
+  const fsMod = await import('node:fs');
+  const names = ['tree-pine', 'tree-oak', 'house', 'atc', 'mast', 'turbine'];
+  let missing: string[] = [];
+  for (const n of names) if (!fsMod.existsSync(`public/images/scenery/${n}.png`)) missing.push(n);
+  check('scenery sprites are on disk', missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : `${names.length} sprites`);
+  check('scenery module is asset-driven', Object.keys(DECOR).length === names.length, Object.keys(DECOR).join(', '));
+
+  // the turn modifier must actually change how the aircraft handles
+  const spec = getAircraft('ef18');
+  const reversals: Record<string, number> = {};
+  for (const turn of [0.6, 1, 2]) {
+    const tune = { ...SANDBOX_DEFAULT, on: false, turn };
+    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null, sandbox: tune });
+    sim.u = spec.vCruise;
+    sim.vy = 0;
+    const hdg0 = sim.hdg;
+    let t = 0;
+    for (let i = 0; i < 40 * 60 && sim.hdg === hdg0; i++) {
+      sim.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0, turn: true });
+      t += 1 / 60;
+    }
+    reversals[String(turn)] = t;
+  }
+  check(
+    'turn modifier scales the reversal',
+    reversals['2'] < reversals['1'] && reversals['1'] < reversals['0.6'],
+    `x0.6 ${reversals['0.6'].toFixed(2)} s · x1 ${reversals['1'].toFixed(2)} s · x2 ${reversals['2'].toFixed(2)} s`,
+  );
+  check('turn modifier stays in range', reversals['0.6'] < 4.2 && reversals['2'] > 0.5, 'no runaway');
 }
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

@@ -171,6 +171,13 @@ const DICT: Record<string, Entry> = {
     es: 'Vuelo sandbox: sin créditos, XP ni medallas. De todos modos lo tienes todo desbloqueado.',
   },
   cheats: { en: 'Sandbox cheats', es: 'Trucos del sandbox' },
+  // --- flight feel
+  feelTitle: { en: '7 · Flight feel', es: '7 · Sensación de vuelo' },
+  turnAmount: { en: 'Turn amount', es: 'Cantidad de giro' },
+  turnHint: {
+    en: 'Multiplies every aircraft\'s control sensitivity: how hard the elevator bites, how fast a reversal snaps and how much energy a hard turn keeps. Fighters start at ×1.3–1.45, the transport at ×0.72 — slide this to taste.',
+    es: 'Multiplica la sensibilidad de mandos de cada avión: con qué fuerza muerde el profundidad, cómo de rápido encadena un giro y cuánta energía conserva en un viraje fuerte. Los cazas parten de ×1,3–1,45 y el transporte de ×0,72; desliza a tu gusto.',
+  },
   // --- in-flight helpers
   altHold: { en: 'Alt hold', es: 'Altitud fija' },
   smoke: { en: 'Smoke', es: 'Humo' },

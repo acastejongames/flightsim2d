@@ -69,7 +69,11 @@ function gearLeg(
   ctx.rotate(ang);
   if (spr) {
     const w = length * spr.aspect;
-    ctx.drawImage(spr.img, -w / 2, -length, w, length);
+    // the world frame has +y up, so flip the bitmap or the wheel ends up on top
+    ctx.save();
+    ctx.scale(1, -1);
+    ctx.drawImage(spr.img, -w / 2, 0, w, length);
+    ctx.restore();
   } else {
     // fallback while the image loads: strut + wheel, same footprint
     ctx.strokeStyle = col(198, 202, 208);

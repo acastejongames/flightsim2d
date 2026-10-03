@@ -15,6 +15,19 @@ interface Star {
   t: number;
 }
 
+/** Land colour for a given altitude, interpolated from the terrain stops. */
+function terrainColor(alt: number): number[] {
+  for (let i = 0; i < TERRAIN_STOPS.length - 1; i++) {
+    const [a0, c0] = TERRAIN_STOPS[i];
+    const [a1, c1] = TERRAIN_STOPS[i + 1];
+    if (alt <= a0 && alt >= a1) {
+      const k = (a0 - alt) / Math.max(1, a0 - a1);
+      return mixRGB(c0, c1, k);
+    }
+  }
+  return alt > TERRAIN_STOPS[0][0] ? TERRAIN_STOPS[0][1] : TERRAIN_STOPS[TERRAIN_STOPS.length - 1][1];
+}
+
 const TERRAIN_STOPS: [number, number[]][] = [
   [3000, [246, 248, 252]],
   [1900, [232, 236, 244]],
@@ -455,17 +468,30 @@ export class Renderer {
       if (h > maxH) maxH = h;
     }
     const t = sim.time;
-    // land
+    // land: every column is coloured by the height of the ground under it, so a
+    // mountain reads as rock and a beach as sand even when the camera is low.
     if (maxH > -120) {
-      const g = ctx.createLinearGradient(0, this.sy(3000), 0, this.sy(-300));
-      for (const [alt, c] of TERRAIN_STOPS) g.addColorStop(clamp((3000 - alt) / 3300, 0, 1), this.lit(c));
-      ctx.fillStyle = g;
+      ctx.save();
       ctx.beginPath();
       ctx.moveTo(0, H + 6);
       for (let i = 0; i < n; i++) ctx.lineTo(i * step, Math.min(this.sy(hb[i]), H + 6));
       ctx.lineTo((n - 1) * step, H + 6);
       ctx.closePath();
-      ctx.fill();
+      ctx.clip();
+      for (let i = 0; i < n; i++) {
+        const y = Math.min(this.sy(hb[i]), H + 6);
+        if (y > H + 4) continue;
+        ctx.fillStyle = this.lit(terrainColor(hb[i]));
+        ctx.fillRect(i * step, y, step + 1, H + 6 - y);
+      }
+      // depth: the ground darkens as it drops towards the bottom of the frame
+      const top = this.sy(Math.max(maxH, 0));
+      const dg = ctx.createLinearGradient(0, Math.min(top, H), 0, H + 40);
+      dg.addColorStop(0, 'rgba(0,0,0,0)');
+      dg.addColorStop(1, `rgba(0,0,0,${this.tod.night ? 0.5 : 0.3})`);
+      ctx.fillStyle = dg;
+      ctx.fillRect(0, 0, W, H + 6);
+      ctx.restore();
       // ridge highlight
       ctx.strokeStyle = this.lit([255, 255, 255], 0.16);
       ctx.lineWidth = 1.5;
@@ -541,6 +567,23 @@ export class Renderer {
         }
         ctx.stroke();
         i = j;
+        // beach: a warm sand lip where the land climbs out of the water
+        for (let k = a + 1; k <= b; k++) {
+          if (hb[k] < 0) continue;
+          const sand = clamp(hb[k] / 26, 0, 1);
+          const y = this.sy(Math.min(hb[k], 3));
+          ctx.fillStyle = this.lit(mixRGB([150, 136, 100], [226, 208, 158], 1 - sand), 0.9);
+          ctx.fillRect(k * step, y, step, Math.max(2, 5 * z * (1 - sand)));
+        }
+        // foam: a lace of white sitting on the waterline
+        for (let k = a + 1; k <= b; k++) {
+          if (hb[k] < 0 || hb[k - 1] >= 0) continue;
+          const wx = cam.x + (k * step - W / 2) / z;
+          const pulse = 0.5 + 0.5 * Math.sin(t * 1.9 + wx * 0.06);
+          ctx.fillStyle = `rgba(255,255,255,${(0.2 + 0.3 * pulse) * (this.tod.night ? 0.45 : 1)})`;
+          const fw = (10 + 16 * pulse) * clamp(z, 0.5, 2.2);
+          ctx.fillRect(k * step - fw / 2, seaTop - 1.5, fw, 2.2);
+        }
       }
     }
   }
@@ -555,6 +598,8 @@ export class Renderer {
     this.drawVillages(sim, x0, x1);
     this.drawInfrastructure(sim, x0, x1);
     if (z > 0.7) this.drawTrees(sim, x0, x1);
+    if (z > 0.6) this.drawGroundTexture(sim, x0, x1);
+    if (z > 0.8) this.drawGroundDetail(sim, x0, x1);
     for (const ap of airportsNear(cam.x, 1)) {
       if (ap.x + ap.len / 2 + 400 < x0 || ap.x - ap.len / 2 - 400 > x1) continue;
       this.drawAirport(sim, ap);
@@ -655,6 +700,173 @@ export class Renderer {
         if (h < 90 || h > 1500) continue;
         if (airportAt(wx, 900)) continue;
         this.decor('turbine', wx, 62 + hash(i * 2.9 + j) * 34, mode, { ground: h, flip: hash(wx) > 0.5 });
+      }
+    }
+  }
+
+  /**
+   * Painted field bands. The terrain fill is a single vertical gradient, which
+   * reads as flat colour; these translucent bands (two different world scales)
+   * break it into pasture, dry field and plough, the way the sky has clouds.
+   */
+  private drawGroundTexture(sim: Sim, x0: number, x1: number): void {
+    if (sim.mode === 'carrier') return;
+    const { ctx, cam, W, H } = this;
+    const z = cam.zoom;
+    const bright = this.spriteBright();
+
+    // clip to the land silhouette so nothing bleeds over the water or the sky
+    const step = 4;
+    const n = Math.ceil(W / step) + 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, H + 6);
+    for (let i = 0; i < n; i++) {
+      const wx = cam.x + (i * step - W / 2) / z;
+      ctx.lineTo(i * step, Math.min(this.sy(terrainHeight(wx, sim.mode)), H + 6));
+    }
+    ctx.lineTo((n - 1) * step, H + 6);
+    ctx.closePath();
+    ctx.clip();
+
+    // wide pasture / dry field / plough, as soft patches that follow the land
+    const bands: [number, number[]][] = [
+      [240, [62, 100, 44]],
+      [86, [172, 158, 96]],
+      [52, [86, 128, 58]],
+    ];
+    for (const [cellW, col] of bands) {
+      const i0 = Math.floor(x0 / cellW) - 1;
+      const i1 = Math.floor(x1 / cellW) + 1;
+      for (let i = i0; i <= i1; i++) {
+        const roll = hash(i * 1.37 + cellW);
+        if (roll < 0.5) continue;
+        // offset and stretch each patch so the rows never line up
+        const wx0 = i * cellW + hash(i * 5.1) * cellW * 0.45;
+        const wK = 0.45 + hash(i * 7.3) * 0.65;
+        const wx1 = wx0 + cellW * wK;
+        const h = terrainHeight((wx0 + wx1) / 2, sim.mode);
+        if (h < 2 || h > 1250) continue;
+        if (airportAt(wx0, 160)) continue;
+        const px0 = this.sx(wx0);
+        const px1 = this.sx(wx1);
+        if (px1 < -4 || px0 > W + 4) continue;
+        // follow the terrain: a quad from the left contact to the right one
+        const y0 = Math.max(0, this.sy(terrainHeight(wx0, sim.mode)));
+        const y1 = Math.max(0, this.sy(terrainHeight(wx1, sim.mode)));
+        const a = (0.13 + roll * 0.14) * bright;
+        const g = ctx.createLinearGradient(px0, 0, px1, 0);
+        const c = this.lit(col, 1);
+        g.addColorStop(0, this.lit(col, 0));
+        g.addColorStop(0.35, c);
+        g.addColorStop(0.65, c);
+        g.addColorStop(1, this.lit(col, 0));
+        ctx.globalAlpha = a;
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(px0, y0);
+        ctx.lineTo(px1, y1);
+        ctx.lineTo(px1, H + 4);
+        ctx.lineTo(px0, H + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    // shingle and sand along the waterline
+    for (let i = 0; i < n; i++) {
+      const wx = cam.x + (i * step - W / 2) / z;
+      const h = terrainHeight(wx, sim.mode);
+      if (h < 0 || h > 16) continue;
+      const a = (1 - h / 16) * 0.4 * bright;
+      ctx.fillStyle = this.lit([214, 196, 146], a);
+      ctx.fillRect(this.sx(wx) - 1, Math.max(0, this.sy(h)), step + 2, H);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Grass, weeds, bushes and pebbles — drawn in metres, so a tuft stays the
+   * same plant at any zoom. Positions come from the same hash field as the
+   * terrain, so nothing crawls while the camera moves.
+   */
+  private drawGroundDetail(sim: Sim, x0: number, x1: number): void {
+    const { ctx, cam, H } = this;
+    const z = cam.zoom;
+    const step = clamp(10 / z, 2.5, 15); // metres between plants: constant on screen
+    const i0 = Math.floor(x0 / step) - 1;
+    const i1 = Math.floor(x1 / step) + 1;
+    const bright = this.spriteBright();
+    const night = this.tod.night;
+    const lean = clamp(this.mood.sea * 0.35 + (this.mood.storm ? 0.4 : 0), 0, 0.75);
+    const blade = clamp(0.085 * z, 0.7, 2.2);
+    const green = (h: number) => (h > 600 ? [148, 164, 96] : h > 220 ? [136, 182, 84] : [152, 196, 92]);
+    const drawTuft = (tx: number, ty: number, seed: number, scale = 1) => {
+      const h = terrainHeight(tx, sim.mode) || 200;
+      const th = (0.9 + hash(seed * 1.7) * 1.15) * scale * z;
+      const sway = Math.sin(sim.time * 1.6 + seed * 0.8) * lean * th * 0.4;
+      ctx.strokeStyle = this.lit([38, 54, 30], 0.45 * bright);
+      ctx.lineWidth = blade * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty + 1);
+      ctx.lineTo(tx + sway, ty + 1 - th * 0.5);
+      ctx.stroke();
+      ctx.strokeStyle = this.lit(green(h), 0.85 * bright);
+      ctx.lineWidth = blade;
+      ctx.beginPath();
+      for (let k = -1; k <= 1; k++) {
+        ctx.moveTo(tx + k * blade * 0.9, ty + 1);
+        ctx.lineTo(tx + k * blade * 1.7 + sway, ty + 1 - th * (1 - Math.abs(k) * 0.26));
+      }
+      ctx.stroke();
+    };
+    for (let i = i0; i <= i1; i++) {
+      const wx = (i + hash(i * 0.61)) * step;
+      const h = terrainHeight(wx, sim.mode);
+      if (h < 1 || h > 1150) continue;
+      if (airportAt(wx, 200)) continue;
+      const px = this.sx(wx);
+      if (px < -20 || px > this.W + 20) continue;
+      const py = this.sy(h);
+      if (py < -20 || py > H + 30) continue;
+      const rocky = h > 1050;
+      const beach = h < 14;
+      const r = hash(i * 1.91);
+      if (beach || (rocky && r > 0.72)) {
+        // pebbles and shells on the sand and the scree
+        const n2 = 2 + ((r * 10) | 0) % 2;
+        for (let k = 0; k < n2; k++) {
+          const rx = px + (hash(i * 7.1 + k) - 0.5) * step * z;
+          const ry = py + (hash(i * 9.7 + k) - 0.5) * 2.2 * z + 1;
+          const rad = (0.09 + hash(i * 11.3 + k) * 0.16) * z;
+          ctx.fillStyle = this.lit(rocky ? [122, 118, 114] : [178, 162, 124], 0.5 * bright);
+          ctx.beginPath();
+          ctx.ellipse(rx, ry, Math.max(0.6, rad), Math.max(0.4, rad * 0.62), 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        continue;
+      }
+      if (r > 0.9) {
+        // a shrub: rounded lump of darker green with a lit crown
+        const bw = (0.8 + hash(i * 3.3) * 1.5) * z;
+        ctx.fillStyle = this.lit(h > 600 ? [58, 78, 46] : [54, 92, 44], 0.55 * bright);
+        ctx.beginPath();
+        ctx.ellipse(px, py - bw * 0.42, bw, bw * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = this.lit([150, 186, 92], 0.45 * bright);
+        ctx.beginPath();
+        ctx.ellipse(px - bw * 0.22, py - bw * 0.66, bw * 0.46, bw * 0.26, 0, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      // a clump here, and a shorter one between samples: a meadow, not dots
+      drawTuft(px, py, i, rocky ? 0.65 : 1);
+      if (hash(i * 2.7) > 0.45) drawTuft(px + step * z * 0.5, py, i + 0.5, rocky ? 0.5 : 0.7);
+      if (!night && !rocky && hash(i * 13.7) > 0.9) {
+        // the odd flower head
+        const fh = (0.9 + hash(i * 1.7) * 1.15) * z * 0.9;
+        ctx.fillStyle = this.lit([238, 224, 138], 0.8 * bright);
+        ctx.fillRect(px + Math.sin(sim.time * 1.6 + i * 0.8) * lean * fh * 0.3, py - fh, Math.max(1, blade * 1.2), Math.max(1, blade * 1.2));
       }
     }
   }

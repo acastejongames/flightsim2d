@@ -41,6 +41,9 @@ export const AIRFRAMES: Record<AircraftId, AirframeDef> = {
   corsair: { id: 'corsair', price: 16000, rank: 2 },
   hornet: { id: 'hornet', price: 48000, rank: 4 },
   typhoon: { id: 'typhoon', price: 72000, rank: 5 },
+  ef18: { id: 'ef18', price: 54000, rank: 4 },
+  pc21: { id: 'pc21', price: 24000, rank: 2 },
+  cn235: { id: 'cn235', price: 38000, rank: 3 },
 };
 
 export type UpgradeEffect = 'thrust' | 'drag' | 'brake' | 'deice' | 'radar' | 'fuel' | 'gear' | 'stab' | 'nav';

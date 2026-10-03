@@ -37,7 +37,8 @@ export default function Hangar({ profile, onChange, onBack, onReset, sandbox }: 
     if (!sb && (profile.money < frame.price || rank.index < frame.rank)) return;
     const price = sb ? 0 : frame.price;
     const owned = [...profile.owned, id];
-    const medals = id === 'hornet' && !profile.medals.includes('jet') ? [...profile.medals, 'jet'] : profile.medals;
+    const isJet = getAircraft(id).kind === 'jet';
+    const medals = isJet && !profile.medals.includes('jet') ? [...profile.medals, 'jet'] : profile.medals;
     commit({ ...profile, owned, money: profile.money - price, aircraft: id, medals });
   };
 

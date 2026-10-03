@@ -575,7 +575,8 @@ export class Sim {
     this.turnT = 0;
     // a reversal is much crisper than it used to be, and fast jets still carve
     // wider arcs than slow ones
-    this.turnDur = clamp(2.3 - this.ias * 0.014, 1.05, 2.3);
+    // fighters snap through a reversal, heavy transports wallow through it
+    this.turnDur = clamp((2.9 - this.ias * 0.01) / (this.spec.sens ?? 1), 0.8, 3.4);
   }
 
   /** Autopilot: capture the current altitude and hold it. */
@@ -841,7 +842,9 @@ export class Sim {
         pitchCmd = clamp(err * 0.02 - this.vy * 0.12, -1, 1);
       }
     }
-    const rate = Math.abs(pitchCmd) > 0.01 ? 3 : 4;
+    // fighters are "sensitive": the servo drives the elevator harder
+    const sensRate = s.sens ?? 1;
+    const rate = (Math.abs(pitchCmd) > 0.01 ? 3 : 4) * sensRate;
     this.elev += clamp(pitchCmd - this.elev, -rate * h, rate * h);
 
     if (this.autoThr && this.grounded) this.autoThr = false;
@@ -1014,6 +1017,8 @@ export class Sim {
     const { m, q, gamma } = A;
     this.u += (A.Fx / m) * h;
     this.vy += (A.Fy / m - G) * h;
+    // evasive high-g turns: agile airframes hold their energy better
+    if (this.g > 4 && (s.sens ?? 1) > 1) this.u += ((s.sens ?? 1) - 1) * 0.35 * h;
 
     const bank = this.turning && this.turnKind === 'air' ? 1.0 * Math.sin(Math.PI * this.turnT) : 0;
     const cosB = Math.cos(bank);
@@ -1021,7 +1026,8 @@ export class Sim {
     const qq = Math.max(q, 1);
     const W = m * G;
     const qf = Math.max(q / (q + 0.5 * 1.225 * Math.pow(0.8 * s.vs, 2)), 0.05);
-    const Kq = s.pitchK * qf;
+    const sens = s.sens ?? 1;
+    const Kq = s.pitchK * sens * qf;
     const Cq = 1.7 * Math.sqrt(Kq) + 0.25;
 
     let aTrim: number;

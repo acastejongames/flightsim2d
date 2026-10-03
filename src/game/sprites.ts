@@ -577,24 +577,49 @@ function spriteAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: Pose,
     ctx.fillRect(sp.xmin, sp.ymin, w, h);
   }
 
-  // afterburner / jet pipe
+  // engines: afterburner plumes on jets, spinning discs on props
   const t = P.thrust;
-  if (t > 0.05) {
-    const n = sp.nozzle;
-    const flick = 0.75 + 0.25 * Math.sin(P.time * 47);
-    const len = (0.35 + t * t * 2.6) * flick;
-    const rr2 = n.r * (0.5 + t * 0.55);
-    const grd = ctx.createRadialGradient(n.x - len * 0.4, n.y, 0.05, n.x - len * 0.4, n.y, rr2);
-    grd.addColorStop(0, t > 0.8 ? 'rgba(255,255,240,0.95)' : 'rgba(255,214,170,0.75)');
-    grd.addColorStop(0.45, t > 0.8 ? 'rgba(120,190,255,0.75)' : 'rgba(255,160,80,0.55)');
-    grd.addColorStop(1, 'rgba(255,120,40,0)');
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.moveTo(n.x, n.y + rr2 * 0.55);
-    ctx.quadraticCurveTo(n.x - len * 0.6, n.y, n.x, n.y - rr2 * 0.55);
-    ctx.quadraticCurveTo(n.x - len, n.y, n.x, n.y + rr2 * 0.55);
-    ctx.closePath();
-    ctx.fill();
+  if (s.kind === 'prop') {
+    for (const e of sp.engines) {
+      const spin = P.phase + e.x;
+      const a = 0.1 + t * 0.22;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = col(210, 215, 225);
+      ctx.beginPath();
+      ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = Math.min(0.85, a + 0.25);
+      ctx.strokeStyle = col(235, 240, 250);
+      ctx.lineWidth = 0.07;
+      for (let i = 0; i < 5; i++) {
+        const ang = spin + (i * Math.PI * 2) / 5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(ang) * e.r, Math.sin(ang) * e.r);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  } else if (t > 0.05) {
+    for (const n of sp.engines) {
+      const flick = 0.75 + 0.25 * Math.sin(P.time * 47 + n.y * 5);
+      const len = (0.35 + t * t * 2.6) * flick;
+      const rr2 = n.r * (0.5 + t * 0.55);
+      const grd = ctx.createRadialGradient(n.x - len * 0.4, n.y, 0.05, n.x - len * 0.4, n.y, rr2);
+      grd.addColorStop(0, t > 0.8 ? 'rgba(255,255,240,0.95)' : 'rgba(255,214,170,0.75)');
+      grd.addColorStop(0.45, t > 0.8 ? 'rgba(120,190,255,0.75)' : 'rgba(255,160,80,0.55)');
+      grd.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.moveTo(n.x, n.y + rr2 * 0.55);
+      ctx.quadraticCurveTo(n.x - len * 0.6, n.y, n.x, n.y - rr2 * 0.55);
+      ctx.quadraticCurveTo(n.x - len, n.y, n.x, n.y + rr2 * 0.55);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   // retractable gear

@@ -3,6 +3,7 @@ name: Deploy to GitHub Pages
 on:
   workflow_dispatch:
   push:
+    branches: [arena/01a1074e-flightsim2d]
 
 permissions:
   contents: read
@@ -23,21 +24,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build project
-        run: npm run build
+      - name: Extract simulator
+        run: |
+          mkdir -p site
+          if [ -f "realistic-2d-flight-simulator.zip" ]; then
+            unzip -o realistic-2d-flight-simulator.zip -d site/
+          fi
+          # Si dentro del zip había una carpeta intermedia, mueve su contenido a site/
+          if [ -d site/dist ]; then
+            cp -r site/dist/* site/
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
       - name: Deploy to GitHub Pages
         id: deployment

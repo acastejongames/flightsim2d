@@ -24,21 +24,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Extract zip
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq unzip
-          unzip -o realistic-2d-flight-simulator.zip
-          if [ -d "src/game" ]; then
-            cp -r src/game/* src/game/
-          fi
+        run: unzip -q -o realistic-2d-flight-simulator.zip
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install
 
       - name: Build
         run: npx vite build --base=/flightsim2d/

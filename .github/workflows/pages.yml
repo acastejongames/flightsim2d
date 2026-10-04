@@ -3,7 +3,6 @@ name: Deploy to GitHub Pages
 on:
   workflow_dispatch:
   push:
-    branches: [arena/01a1074e-flightsim2d]
 
 permissions:
   contents: read
@@ -24,25 +23,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare site
+      - name: Extract project source
         run: |
-          mkdir -p site
-          if [ -f "realistic-2d-flight-simulator.zip" ]; then
-            unzip -o realistic-2d-flight-simulator.zip -d site/
+          unzip -o realistic-2d-flight-simulator.zip
+          # Sobrescribir con las mejoras de luces, tren y humo si existen en la rama
+          if [ -d "src/game" ]; then
+            cp -r src/game/* src/game/
           fi
-          # Si dentro del zip había una carpeta, la sacamos
-          if [ -d site/dist ]; then
-            cp -r site/dist/* site/
-          fi
-          # Corregir rutas para GitHub Pages (/flightsim2d/)
-          find site -name "*.html" -exec sed -i 's|<head>|<head><base href="/flightsim2d/">|g' {} +
-          find site -name "*.html" -exec sed -i 's|="/assets/|="./assets/|g' {} +
-          find site -name "*.js" -exec sed -i 's|"/assets/|"./assets/|g' {} +
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project with base path
+        run: npx vite build --base=/flightsim2d/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment

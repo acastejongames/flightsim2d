@@ -24,16 +24,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract simulator
+      - name: Prepare site
         run: |
           mkdir -p site
           if [ -f "realistic-2d-flight-simulator.zip" ]; then
             unzip -o realistic-2d-flight-simulator.zip -d site/
           fi
-          # Si dentro del zip había una carpeta intermedia, mueve su contenido a site/
+          # Si dentro del zip había una carpeta, la sacamos
           if [ -d site/dist ]; then
             cp -r site/dist/* site/
           fi
+          # Corregir rutas para GitHub Pages (/flightsim2d/)
+          find site -name "*.html" -exec sed -i 's|<head>|<head><base href="/flightsim2d/">|g' {} +
+          find site -name "*.html" -exec sed -i 's|="/assets/|="./assets/|g' {} +
+          find site -name "*.js" -exec sed -i 's|"/assets/|"./assets/|g' {} +
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

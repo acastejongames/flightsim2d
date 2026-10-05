@@ -1,30 +1,5 @@
 export type AircraftId = 'pc21' | 'cn235' | 'ef18' | 'typhoon';
 
-export interface LightAnchor {
-  x: number;
-  y: number;
-  r?: number;
-}
-
-export interface AircraftAnchors {
-  /** Engine exhaust origin in model metres (+x forward, +y up) */
-  exhaust: { x: number; y: number };
-  /** Exclusive aerobatic smoke injector */
-  smoke?: { x: number; y: number };
-  /** Right wingtip green navigation light (regulation: starboard = green) */
-  navRight: LightAnchor;
-  /** Left wingtip red navigation light (regulation: port = red) */
-  navLeft: LightAnchor;
-  /** White tail position light */
-  tailLight: LightAnchor;
-  /** Red anti-collision flashing beacon */
-  beacon: LightAnchor;
-  /** High-intensity white flashing strobes */
-  strobes: LightAnchor[];
-  /** Jet afterburner nozzle origins */
-  afterburner?: { x: number; y: number; r: number }[];
-}
-
 /**
  * A hand-drawn side view used instead of the procedural renderer.
  * All the numbers are metres relative to the aircraft origin (+x forward, +y up).
@@ -50,10 +25,6 @@ export interface AircraftSpec {
   kind: 'prop' | 'jet';
   carrier: boolean;
   fixedGear: boolean;
-  /** Whether airframe is equipped with aerobatic smoke injectors */
-  hasSmoke?: boolean;
-  /** Exact anchor positions for lights, smoke, exhaust, and afterburner */
-  anchors: AircraftAnchors;
   // mass (kg)
   emptyMass: number;
   fuelMax: number;
@@ -112,6 +83,8 @@ export interface AircraftSpec {
   upgraded?: boolean;
   /** optional hand-drawn sprite (see SpriteDef) */
   sprite?: SpriteDef;
+  /** aerobatic smoke palette: the trail alternates between these RGB colours (default is a rainbow cycle) */
+  smokeColors?: [number, number, number][];
   // menu stats 0..1
   stats: { speed: number; climb: number; agility: number; range: number };
 }
@@ -148,9 +121,9 @@ export const AIRCRAFT: AircraftSpec[] = [
     gmin: 3.5,
     vne: 560,
     length: 17.07,
-    gearH: 1.75,
+    gearH: 2.2,
     mainX: -0.5,
-    noseX: 5.7,
+    noseX: 6.3,
     tailAngle: 0.24,
     hookX: 6.6,
     propR: 0,
@@ -164,29 +137,14 @@ export const AIRCRAFT: AircraftSpec[] = [
     launchPitch: 0.13,
     maxSink: 7.4,
     stats: { speed: 0.98, climb: 0.92, agility: 0.9, range: 0.5 },
-    anchors: {
-      exhaust: { x: -6.45, y: 0.02 },
-      navRight: { x: -2.3, y: 0.45, r: 0.07 },
-      navLeft: { x: -2.1, y: 0.55, r: 0.07 },
-      tailLight: { x: -6.4, y: 0.28, r: 0.06 },
-      beacon: { x: 2.3, y: 1.25, r: 0.08 },
-      strobes: [
-        { x: -2.2, y: 0.5, r: 0.08 },
-        { x: -3.8, y: 2.88, r: 0.08 },
-      ],
-      afterburner: [
-        { x: -6.45, y: 0.16, r: 0.42 },
-        { x: -6.35, y: -0.12, r: 0.42 },
-      ],
-    },
     sprite: {
       src: 'images/ef18.png',
       xmin: -6.83,
       xmax: 10.24,
       ymin: -0.88,
       ymax: 2.9,
-      nose: { x: 5.7, pivotY: -0.65, legLen: 0.85, wheelR: 0.25 },
-      main: { x: -0.5, pivotY: -0.72, legLen: 0.78, wheelR: 0.25 },
+      nose: { x: 6.3, pivotY: -0.72, legLen: 1.16, wheelR: 0.32 },
+      main: { x: -0.5, pivotY: -0.78, legLen: 1.1, wheelR: 0.32 },
       engines: [
         { x: -6.45, y: 0.16, r: 0.42 },
         { x: -6.35, y: -0.12, r: 0.42 },
@@ -224,9 +182,9 @@ export const AIRCRAFT: AircraftSpec[] = [
     gmin: 3,
     vne: 190,
     length: 11.23,
-    gearH: 1.25,
-    mainX: 0.0,
-    noseX: 4.2,
+    gearH: 1.5,
+    mainX: -0.1,
+    noseX: 4.5,
     tailAngle: 0.2,
     hookX: 0,
     propR: 1.2,
@@ -239,28 +197,20 @@ export const AIRCRAFT: AircraftSpec[] = [
     catSpeed: 0,
     launchPitch: 0,
     maxSink: 3.8,
-    stats: { speed: 0.55, climb: 0.6, agility: 0.75, range: 0.7 },
-    hasSmoke: true,
-    anchors: {
-      exhaust: { x: 4.6, y: 0.28 },
-      smoke: { x: 4.6, y: 0.28 },
-      navRight: { x: 0.2, y: 0.45, r: 0.06 },
-      navLeft: { x: 0.35, y: 0.55, r: 0.06 },
-      tailLight: { x: -4.8, y: 0.38, r: 0.05 },
-      beacon: { x: 1.7, y: 1.35, r: 0.07 },
-      strobes: [
-        { x: 0.25, y: 0.5, r: 0.07 },
-        { x: -4.1, y: 2.58, r: 0.07 },
+      stats: { speed: 0.55, climb: 0.6, agility: 0.75, range: 0.7 },
+      // display smoke in the national colours: red and yellow, like the display teams
+      smokeColors: [
+        [214, 32, 44],
+        [255, 196, 0],
       ],
-    },
     sprite: {
       src: 'images/pc21.png',
       xmin: -5.05,
       xmax: 6.18,
       ymin: -0.84,
       ymax: 2.62,
-      nose: { x: 4.2, pivotY: -0.4, legLen: 0.65, wheelR: 0.2 },
-      main: { x: 0.0, pivotY: -0.42, legLen: 0.63, wheelR: 0.2 },
+      nose: { x: 4.5, pivotY: -0.44, legLen: 0.84, wheelR: 0.22 },
+      main: { x: -0.1, pivotY: -0.46, legLen: 0.82, wheelR: 0.22 },
       engines: [{ x: 5.35, y: 0.28, r: 1.3 }],
     },
   },
@@ -295,9 +245,11 @@ export const AIRCRAFT: AircraftSpec[] = [
     gmin: 2,
     vne: 185,
     length: 21.4,
-    gearH: 1.48,
-    mainX: 0.15,
-    noseX: 5.2,
+    gearH: 2.6,
+    // wheels hang from the bays drawn in the artwork: mains in the belly
+    // sponson, nose gear under the cockpit
+    mainX: 3.2,
+    noseX: 8.0,
     tailAngle: 0.22,
     hookX: 0,
     propR: 1.9,
@@ -311,26 +263,14 @@ export const AIRCRAFT: AircraftSpec[] = [
     launchPitch: 0,
     maxSink: 4.2,
     stats: { speed: 0.5, climb: 0.4, agility: 0.3, range: 1 },
-    anchors: {
-      exhaust: { x: 3.2, y: 0.32 },
-      navRight: { x: 1.7, y: 2.65, r: 0.08 },
-      navLeft: { x: 1.9, y: 2.75, r: 0.08 },
-      tailLight: { x: -9.5, y: 1.7, r: 0.07 },
-      beacon: { x: 2.2, y: 2.82, r: 0.09 },
-      strobes: [
-        { x: 1.8, y: 2.7, r: 0.09 },
-        { x: -8.9, y: 6.55, r: 0.09 },
-      ],
-    },
     sprite: {
       src: 'images/cn235.png',
       xmin: -9.63,
       xmax: 11.77,
       ymin: -1.26,
       ymax: 6.66,
-      // Short gear legs tucked deep inside the belly sponson & nose bay
-      nose: { x: 5.2, pivotY: -0.55, legLen: 0.71, wheelR: 0.22 },
-      main: { x: 0.15, pivotY: -0.55, legLen: 0.71, wheelR: 0.22 },
+      nose: { x: 8.0, pivotY: -0.82, legLen: 1.48, wheelR: 0.3 },
+      main: { x: 3.2, pivotY: -0.86, legLen: 1.44, wheelR: 0.3 },
       engines: [{ x: 4.72, y: 1.6, r: 1.85 }],
     },
   },
@@ -365,9 +305,9 @@ export const AIRCRAFT: AircraftSpec[] = [
     gmin: 3.5,
     vne: 600,
     length: 15.96,
-    gearH: 1.85,
+    gearH: 2.35,
     mainX: -0.5,
-    noseX: 4.3,
+    noseX: 4.6,
     tailAngle: 0.28,
     hookX: 0,
     propR: 0,
@@ -381,18 +321,6 @@ export const AIRCRAFT: AircraftSpec[] = [
     launchPitch: 0.13,
     maxSink: 7,
     stats: { speed: 1, climb: 1, agility: 0.92, range: 0.45 },
-    anchors: {
-      exhaust: { x: -6.95, y: 0.12 },
-      navRight: { x: -3.2, y: 0.52, r: 0.07 },
-      navLeft: { x: -3.0, y: 0.62, r: 0.07 },
-      tailLight: { x: -6.9, y: 0.28, r: 0.06 },
-      beacon: { x: 0.8, y: 1.35, r: 0.08 },
-      strobes: [
-        { x: -3.1, y: 0.57, r: 0.08 },
-        { x: -7.8, y: 3.28, r: 0.08 },
-      ],
-      afterburner: [{ x: -6.95, y: 0.12, r: 0.6 }],
-    },
     sprite: {
       src: 'images/typhoon.png',
       // measured from the artwork: 1251 px across = 15.96 m, origin 47% back from the nose
@@ -401,8 +329,8 @@ export const AIRCRAFT: AircraftSpec[] = [
       ymin: -1.52,
       ymax: 3.29,
       // pivots sit inside the airframe, legs reach the ground at -gearH
-      nose: { x: 4.3, pivotY: -0.75, legLen: 0.82, wheelR: 0.28 },
-      main: { x: -0.5, pivotY: -0.85, legLen: 0.72, wheelR: 0.28 },
+      nose: { x: 4.6, pivotY: -0.8, legLen: 1.25, wheelR: 0.3 },
+      main: { x: -0.5, pivotY: -0.9, legLen: 1.1, wheelR: 0.35 },
       engines: [{ x: -7.0, y: 0.12, r: 0.6 }],
     },
   },

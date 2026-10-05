@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [arena/01a10344-flightsim2d]
   workflow_dispatch:
 
 permissions:

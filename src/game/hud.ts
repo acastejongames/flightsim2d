@@ -21,8 +21,8 @@ export interface HudExtra {
   compact?: boolean;
   /** CSS px covered by the touch deck at the bottom of the screen */
   insetBottom?: number;
-  /** CSS px reserved for the top-right button bar (compact layout) */
-  insetRight?: number;
+  /** CSS px covered by the top button bar: the compact strip starts under it */
+  insetTop?: number;
 }
 
 /** radar echoes are recomputed a few times per second, not every frame */
@@ -781,8 +781,9 @@ function hudCompact(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Si
   const pad = 8;
   const insetB = extra.insetBottom ?? 0;
   const deckY = H - insetB;
-  const top = pad;
-  const stripW = Math.max(140, W - pad * 2 - (extra.insetRight ?? 0));
+  // the system bar (pause / mute / respawn) sits top-right; the strip runs below it
+  const top = pad + (extra.insetTop ?? 0);
+  const stripW = Math.max(140, W - pad * 2);
   const total = run ? run.mission.gates.length : 0;
   const passed = run ? run.mission.gates.filter((g) => g.passed).length : 0;
   const timeLeft = run ? run.timeLeft : null;

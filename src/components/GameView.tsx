@@ -5,7 +5,7 @@ import type { SimSettings, Input } from '../game/sim';
 import { Renderer } from '../game/render';
 import type { HudExtra } from '../game/hud';
 import { AudioEngine } from '../game/audio';
-import { t, useLang } from '../game/i18n';
+import { t, t2, useLang } from '../game/i18n';
 import { TODS } from '../game/world';
 import type { TimeOfDay } from '../game/world';
 import { WEATHERS } from '../game/weather';
@@ -20,6 +20,8 @@ import type { SandboxTune } from '../game/sandbox';
 import Controls from './Controls';
 import TouchDeck from './TouchDeck';
 import type { HoldKey, PitchLever } from './TouchDeck';
+import { getUiMode, handheldQueries, setUiMode, useUiMode, wantsTouchUi } from '../game/ui';
+import type { UiMode } from '../game/ui';
 
 interface Props {
   settings: SimSettings;
@@ -89,13 +91,15 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
     deckPxRef.current = h;
     setDeckH(h);
   }, []);
-  const onBarMeasure = useCallback((w: number) => {
-    barPxRef.current = w;
+  const onBarMeasure = useCallback((h: number) => {
+    barPxRef.current = h;
   }, []);
   const [paused, setPausedState] = useState(false);
   const [muted, setMutedState] = useState(false);
-  const [coarse, setCoarse] = useState(false);
-  const compactRef = useRef(false);
+  const uiMode = useUiMode();
+  const [coarse, setCoarse] = useState(() => wantsTouchUi());
+  /** mirrors `coarse` for the render loop (no re-render needed) */
+  const touchUiRef = useRef(coarse);
   const [crashed, setCrashed] = useState(false);
   const [missionDone, setMissionDone] = useState(false);
   const [missionFailed, setMissionFailed] = useState(false);
@@ -143,18 +147,25 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
   }, [onFinish, onQuit]);
 
   useEffect(() => {
-    const mq = window.matchMedia('(pointer: coarse)');
-    const sync = () => {
-      const on = mq.matches || window.innerWidth < 560;
-      compactRef.current = on;
-      setCoarse(on);
+    const apply = () => {
+      const on = wantsTouchUi();
+      touchUiRef.current = on;
+      setCoarse((prev) => (prev === on ? prev : on));
     };
-    sync();
-    mq.addEventListener?.('change', sync);
-    window.addEventListener('resize', sync);
+    apply();
+    const mqs = handheldQueries();
+    for (const mq of mqs) mq.addEventListener?.('change', apply);
+    window.addEventListener('resize', apply);
+    return () => {
+      for (const mq of mqs) mq.removeEventListener?.('change', apply);
+      window.removeEventListener('resize', apply);
+    };
+  }, [uiMode, settings]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const sim = new Sim({ ...settings, touch: compactRef.current });
+    const sim = new Sim({ ...settings, touch: touchUiRef.current });
     const rend = new Renderer(canvas, settings.tod);
     const audio = new AudioEngine();
     audio.init(settings.spec.kind);
@@ -318,6 +329,7 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
     const loop = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
+      if (sim.touch !== touchUiRef.current) sim.touch = touchUiRef.current;
       const hold = holdRef.current;
       const lever = pitchRef.current;
       const up = keys.has('ArrowUp') || keys.has('KeyW');
@@ -353,9 +365,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
       extra.paused = pausedRef.current;
       extra.muted = mutedRef.current;
       extra.warp = warpRef.current;
-      extra.compact = compactRef.current;
-      extra.insetBottom = compactRef.current ? deckPxRef.current : 0;
-      extra.insetRight = compactRef.current ? barPxRef.current : 0;
+      extra.compact = touchUiRef.current;
+      extra.insetBottom = touchUiRef.current ? deckPxRef.current : 0;
+      extra.insetTop = touchUiRef.current ? barPxRef.current : 0;
       rend.frame(sim, pausedRef.current ? 0.0001 : dt, extra);
       raf = requestAnimationFrame(loop);
     };
@@ -363,8 +375,6 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
 
     return () => {
       cancelAnimationFrame(raf);
-      mq.removeEventListener?.('change', sync);
-      window.removeEventListener('resize', sync);
       window.removeEventListener('resize', resize);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
@@ -382,9 +392,9 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
   useEffect(() => {
     const el = topBarRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => onBarMeasure(el.offsetWidth + 12));
+    const ro = new ResizeObserver(() => onBarMeasure(el.offsetHeight + 4));
     ro.observe(el);
-    onBarMeasure(el.offsetWidth + 12);
+    onBarMeasure(el.offsetHeight + 4);
     return () => ro.disconnect();
   }, [coarse, settings.sandbox?.on, onBarMeasure]);
 
@@ -434,6 +444,16 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
             }`}
           >
             <Ico name="tune" size={12} className={coarse ? '' : 'mr-1 inline -mt-0.5'}/>{!coarse && t('sandbox')}
+          </button>
+        )}
+        {coarse && (
+          <button
+            onClick={() => simRef.current?.respawn()}
+            title={t('respawn')}
+            aria-label={t('respawn')}
+            className="bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 ring-1 ring-white/15 hover:bg-slate-800/80"
+          >
+            <Ico name="refresh" size={15} />
           </button>
         )}
         {/* a phone gets its flights ended from the pause menu, not by a stray thumb */}
@@ -714,6 +734,27 @@ export default function GameView({ settings, onFinish, onQuit, onSandbox }: Prop
               </span>
               <span className={`px-2 py-1 ${warp > 1 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/5 text-slate-400'}`}>
                 N · {t('timeWarp')} ×{warp}
+              </span>
+            </div>
+            <div className="mb-4 flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                {t('interface')}
+              </span>
+              {(['auto', 'touch', 'desktop'] as UiMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setUiMode(m)}
+                  className={`px-2.5 py-1 text-[11px] font-bold uppercase ring-1 ${
+                    uiMode === m
+                      ? 'bg-sky-400 text-slate-950 ring-sky-300'
+                      : 'bg-white/5 text-slate-300 ring-white/10 hover:bg-white/15'
+                  }`}
+                >
+                  {t(m === 'auto' ? 'uiAuto' : m === 'touch' ? 'uiTouch' : 'uiKeys')}
+                </button>
+              ))}
+              <span className="text-[11px] text-slate-400">
+                {t2(getUiMode() === 'auto' ? 'detected automatically' : 'forced', getUiMode() === 'auto' ? 'detectada automáticamente' : 'forzada')}
               </span>
             </div>
             <Controls compact touch={coarse} />

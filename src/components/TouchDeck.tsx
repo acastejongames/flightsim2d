@@ -338,7 +338,7 @@ export default function TouchDeck({ simRef, pitchRef, warp, paused, onWarp, onHo
   return (
     <div ref={root} className="pointer-events-auto fixed inset-x-0 bottom-0 z-20 select-none">
       <div
-        className={`mx-auto flex w-full max-w-[720px] items-stretch gap-1 border-t border-white/10 bg-slate-950/85 px-1.5 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] shadow-[0_-10px_30px_rgba(0,0,0,0.55)] backdrop-blur-sm ${
+        className={`mx-auto flex w-full max-w-[720px] items-stretch gap-1.5 border-t border-white/10 bg-slate-950/85 px-1.5 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] shadow-[0_-10px_30px_rgba(0,0,0,0.55)] backdrop-blur-sm ${
           st.alive ? '' : 'opacity-45'
         }`}
       >
@@ -355,7 +355,7 @@ export default function TouchDeck({ simRef, pitchRef, warp, paused, onWarp, onHo
           }}
         />
 
-        <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(46px,1fr))] gap-1">
+        <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(46px,1fr))] gap-1 px-1">
           <Chip
             label={t2('GEAR', 'TREN')}
             value={st.fixedGear ? t2('FIX', 'FIJO') : gearLabel}
@@ -410,15 +410,14 @@ export default function TouchDeck({ simRef, pitchRef, warp, paused, onWarp, onHo
             on={warp > 1}
             onTap={onWarp}
           />
-          <Chip label={t2('RUD', 'TIMÓN')} value="←" hold onHold={(d) => onHold('rudL', d)} />
-          <Chip label={t2('RUD', 'TIMÓN')} value="→" hold onHold={(d) => onHold('rudR', d)} />
           <Chip
             label={t2('SMOKE', 'HUMO')}
             value={st.smoke ? 'ON' : 'OFF'}
             on={st.smoke}
             onTap={() => simRef.current?.toggleSmoke()}
           />
-          <Chip label="↺" value={t2('RESET', 'REINIC')} onTap={() => simRef.current?.respawn()} />
+          <Chip label={t2('RUD', 'TIMÓN')} value="←" hold onHold={(d) => onHold('rudL', d)} />
+          <Chip label={t2('RUD', 'TIMÓN')} value="→" hold onHold={(d) => onHold('rudR', d)} />
         </div>
 
         <Lever

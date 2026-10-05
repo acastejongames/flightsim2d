@@ -36,7 +36,8 @@ interface Shot {
   grounded?: boolean;
   /** clear the message log so the shot shows the panels only */
   quiet?: boolean;
-  barW?: number;
+  /** height of the top system bar (maps to HudExtra.insetTop) */
+  barH?: number;
   zoom?: number;
   paused?: boolean;
 }
@@ -99,8 +100,8 @@ export async function mobileShots(shots: Shot[]): Promise<void> {
       showHelp: false,
       warp: 1,
       compact: o.compact !== false,
-      insetBottom: o.deckH ?? 140,
-      insetRight: o.barW ?? 104,
+      insetBottom: o.deckH ?? 132,
+      insetTop: o.barH ?? 38,
     };
     for (let i = 0; i < 40; i++) {
       sim.update(dt, IN);

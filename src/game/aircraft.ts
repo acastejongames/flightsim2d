@@ -15,6 +15,17 @@ export interface SpriteDef {
   main: { x: number; pivotY: number; legLen: number; wheelR: number };
   /** engine markers: afterburner plumes on jets, propeller discs on props */
   engines: { x: number; y: number; r: number }[];
+  /**
+   * External lights, in the same metre frame as the artwork: navigation
+   * (red wingtip, white tail), anti-collision beacon on the spine, white
+   * strobes (wingtip + tail) and the runway/landing light at the nose.
+   */
+  lights?: {
+    nav: { x: number; y: number };
+    tail: { x: number; y: number };
+    beacon: { x: number; y: number };
+    rwy: { x: number; y: number };
+  };
 }
 
 export interface AircraftSpec {
@@ -149,6 +160,12 @@ export const AIRCRAFT: AircraftSpec[] = [
         { x: -6.45, y: 0.16, r: 0.42 },
         { x: -6.35, y: -0.12, r: 0.42 },
       ],
+      lights: {
+        nav: { x: -1.1, y: 0.15 },
+        tail: { x: -6.7, y: 2.35 },
+        beacon: { x: -3.6, y: 0.95 },
+        rwy: { x: 6.1, y: -0.75 },
+      },
     },
   },
   {
@@ -212,6 +229,12 @@ export const AIRCRAFT: AircraftSpec[] = [
       nose: { x: 4.5, pivotY: -0.44, legLen: 0.84, wheelR: 0.22 },
       main: { x: -0.1, pivotY: -0.46, legLen: 0.82, wheelR: 0.22 },
       engines: [{ x: 5.35, y: 0.28, r: 1.3 }],
+      lights: {
+        nav: { x: -4.35, y: 0.3 },
+        tail: { x: -4.6, y: 0.85 },
+        beacon: { x: 0.3, y: 1.02 },
+        rwy: { x: 5.5, y: -0.15 },
+      },
     },
   },
   {
@@ -245,7 +268,8 @@ export const AIRCRAFT: AircraftSpec[] = [
     gmin: 2,
     vne: 185,
     length: 21.4,
-    gearH: 2.6,
+    // short-legged airlifter: the belly sits close to the ground
+    gearH: 2.05,
     // wheels hang from the bays drawn in the artwork: mains in the belly
     // sponson, nose gear under the cockpit
     mainX: 3.2,
@@ -269,9 +293,17 @@ export const AIRCRAFT: AircraftSpec[] = [
       xmax: 11.77,
       ymin: -1.26,
       ymax: 6.66,
-      nose: { x: 8.0, pivotY: -0.82, legLen: 1.48, wheelR: 0.3 },
-      main: { x: 3.2, pivotY: -0.86, legLen: 1.44, wheelR: 0.3 },
+      // the legs start inside the belly and only the wheel shows below the
+      // sponson, so the transport never looks like it is on stilts
+      nose: { x: 8.0, pivotY: -0.5, legLen: 1.25, wheelR: 0.3 },
+      main: { x: 3.2, pivotY: -0.55, legLen: 1.2, wheelR: 0.3 },
       engines: [{ x: 4.72, y: 1.6, r: 1.85 }],
+      lights: {
+        nav: { x: -2.6, y: 2.05 },
+        tail: { x: -8.35, y: 5.85 },
+        beacon: { x: 3.0, y: 2.25 },
+        rwy: { x: 10.4, y: 0.25 },
+      },
     },
   },
   {
@@ -332,6 +364,12 @@ export const AIRCRAFT: AircraftSpec[] = [
       nose: { x: 4.6, pivotY: -0.8, legLen: 1.25, wheelR: 0.3 },
       main: { x: -0.5, pivotY: -0.9, legLen: 1.1, wheelR: 0.35 },
       engines: [{ x: -7.0, y: 0.12, r: 0.6 }],
+      lights: {
+        nav: { x: -3.1, y: -0.85 },
+        tail: { x: -6.6, y: 2.6 },
+        beacon: { x: -1.4, y: 1.3 },
+        rwy: { x: 6.0, y: -0.3 },
+      },
     },
   },
 ];

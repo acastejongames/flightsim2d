@@ -32,6 +32,8 @@ interface Shot {
   kill?: boolean;
   /** set false to render the classic desktop HUD */
   compact?: boolean;
+  /** keep the aircraft on the ground (banner + coaching messages visible) */
+  grounded?: boolean;
   barW?: number;
   zoom?: number;
   paused?: boolean;
@@ -71,9 +73,10 @@ export async function mobileShots(shots: Shot[]): Promise<void> {
     const IN = { pitch: 0, thr: 0, brake: false, rudder: 0 };
     const hold = () => {
       sim.y = o.y !== undefined ? o.y : terrainHeight(sim.x, mode) + agl;
-      sim.vy = -1.4;
+      sim.vy = o.grounded ? 0 : -1.4;
       sim.alive = true;
-      sim.grounded = false;
+      sim.grounded = !!o.grounded;
+      sim.u = o.grounded ? 0 : sim.u;
       sim.vx = mode === 'carrier' ? 62 : 95;
       if (o.gear !== undefined) sim.gear = o.gear;
       if (o.flaps !== undefined) sim.flaps = o.flaps;
@@ -125,5 +128,7 @@ if (process.argv[1]?.includes('mshot')) {
     { file: '/tmp/m-crash.png', W: 390, H: 844, mode: 'open', ac: 'pc21', agl: 200, mission: true, deckH: 190, kill: true },
     { file: '/tmp/m-landscape-deck.png', W: 844, H: 390, mode: 'open', ac: 'pc21', agl: 240, mission: true, deckH: 96 },
     { file: '/tmp/m-desktop.png', W: 1280, H: 720, mode: 'open', ac: 'ef18', agl: 300, mission: true, compact: false },
+    { file: '/tmp/m-parked.png', W: 390, H: 844, mode: 'open', ac: 'pc21', agl: 2, mission: true, grounded: true, deckH: 130 },
+    { file: '/tmp/m-carrier-mission.png', W: 390, H: 844, mode: 'carrier', ac: 'ef18', y: 92, gear: 1, flaps: 2, hook: true, wx: 900, mission: true, deckH: 130 },
   ]);
 }

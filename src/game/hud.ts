@@ -894,8 +894,11 @@ function hudCompact(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Si
     }
   }
 
+  // ---------------- mission briefing banner (just under the strip)
+  const bannerH = missionBannerDraw(ctx, W, H, sim, true, sy + stripH);
+
   // ---------------- message log (compact, wrapped)
-  let my = sy + stripH + 22;
+  let my = sy + stripH + bannerH + 22;
   for (const m of sim.msgs.slice(-2)) {
     const fade = clamp(Math.min(m.t / 0.2, (m.dur - m.t) / 0.6), 0, 1);
     const col = m.kind === 'good' ? '#7dffa6' : m.kind === 'warn' ? '#ffc65a' : m.kind === 'bad' ? '#ff6b5e' : '#e8f1ff';

@@ -33,7 +33,7 @@ jobs:
         run: npm install
 
       - name: Build project
-        run: npm run build
+        run: npx vite build --base=/flightsim2d/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

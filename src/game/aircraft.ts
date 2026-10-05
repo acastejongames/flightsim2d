@@ -83,6 +83,8 @@ export interface AircraftSpec {
   upgraded?: boolean;
   /** optional hand-drawn sprite (see SpriteDef) */
   sprite?: SpriteDef;
+  /** aerobatic smoke palette: the trail alternates between these RGB colours (default is a rainbow cycle) */
+  smokeColors?: [number, number, number][];
   // menu stats 0..1
   stats: { speed: number; climb: number; agility: number; range: number };
 }
@@ -120,7 +122,7 @@ export const AIRCRAFT: AircraftSpec[] = [
     vne: 560,
     length: 17.07,
     gearH: 2.2,
-    mainX: 0.5,
+    mainX: -0.5,
     noseX: 6.3,
     tailAngle: 0.24,
     hookX: 6.6,
@@ -181,8 +183,8 @@ export const AIRCRAFT: AircraftSpec[] = [
     vne: 190,
     length: 11.23,
     gearH: 1.5,
-    mainX: 0.2,
-    noseX: 4.7,
+    mainX: -0.1,
+    noseX: 4.5,
     tailAngle: 0.2,
     hookX: 0,
     propR: 1.2,
@@ -195,7 +197,12 @@ export const AIRCRAFT: AircraftSpec[] = [
     catSpeed: 0,
     launchPitch: 0,
     maxSink: 3.8,
-    stats: { speed: 0.55, climb: 0.6, agility: 0.75, range: 0.7 },
+      stats: { speed: 0.55, climb: 0.6, agility: 0.75, range: 0.7 },
+      // display smoke in the national colours: red and yellow, like the display teams
+      smokeColors: [
+        [214, 32, 44],
+        [255, 196, 0],
+      ],
     sprite: {
       src: 'images/pc21.png',
       xmin: -5.05,
@@ -239,8 +246,10 @@ export const AIRCRAFT: AircraftSpec[] = [
     vne: 185,
     length: 21.4,
     gearH: 2.6,
-    mainX: -1.4,
-    noseX: 5.8,
+    // wheels hang from the bays drawn in the artwork: mains in the belly
+    // sponson, nose gear under the cockpit
+    mainX: 3.2,
+    noseX: 8.0,
     tailAngle: 0.22,
     hookX: 0,
     propR: 1.9,
@@ -260,8 +269,8 @@ export const AIRCRAFT: AircraftSpec[] = [
       xmax: 11.77,
       ymin: -1.26,
       ymax: 6.66,
-      nose: { x: 5.1, pivotY: -0.82, legLen: 1.48, wheelR: 0.3 },
-      main: { x: -0.3, pivotY: -0.86, legLen: 1.44, wheelR: 0.3 },
+      nose: { x: 8.0, pivotY: -0.82, legLen: 1.48, wheelR: 0.3 },
+      main: { x: 3.2, pivotY: -0.86, legLen: 1.44, wheelR: 0.3 },
       engines: [{ x: 4.72, y: 1.6, r: 1.85 }],
     },
   },

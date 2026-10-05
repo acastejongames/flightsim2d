@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [arena/01a10344-flightsim2d]
+    branches: [arena/01a10344-flightsim2d, arena/01a10954-flightsim2d]
   workflow_dispatch:
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
         run: npm install
 
       - name: Build project
-        run: npm run build
+        run: npx vite build --base=/flightsim2d/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -335,7 +335,21 @@ console.log('\n== Sprite aircraft ==');
     );
     check(`${id}: airframe clears the ground`, sp.ymin > -spec.gearH, `lowest art ${sp.ymin} m vs ground −${spec.gearH} m`);
     check(`${id}: has engine markers`, sp.engines.length > 0, `${sp.engines.length} engine(s)`);
+    check(
+      `${id}: physics wheels match the drawn gear`,
+      Math.abs(spec.mainX - sp.main.x) < 0.05 && Math.abs(spec.noseX - sp.nose.x) < 0.05,
+      `physics main ${spec.mainX} / nose ${spec.noseX} vs drawn ${sp.main.x} / ${sp.nose.x}`,
+    );
   }
+
+  // the CN-235 gear must hang from the bays drawn in the artwork
+  // (measured on images/cn235.png: main wheel nub ≈ +3.2 m, nose strut ≈ +8.0 m)
+  const cnSp = getAircraft('cn235').sprite!;
+  check(
+    'CN-235 gear hangs from the artwork bays',
+    Math.abs(cnSp.main.x - 3.2) < 0.3 && Math.abs(cnSp.nose.x - 8.0) < 0.3,
+    `main ${cnSp.main.x} m, nose ${cnSp.nose.x} m`,
+  );
 
   // fighters must be crisper than transports
   const ef18 = getAircraft('ef18');
@@ -369,6 +383,30 @@ console.log('\n== Sprite aircraft ==');
     }
     check('CN-235 gets airborne', !sim.grounded && sim.agl > 100, `${sim.agl.toFixed(0)} m AGL at ${sim.ias.toFixed(0)} m/s`);
   }
+}
+
+
+// ---------------------------------------------------------------- display smoke palette
+console.log('\n== Display smoke palette ==');
+{
+  const spec = getAircraft('pc21');
+  const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+  sim.u = spec.vCruise;
+  // partial power so the grey exhaust haze (thrust > 0.7) never mixes with the trail
+  sim.throttle = 0.45;
+  sim.thrust = 0.45;
+  sim.toggleSmoke();
+  for (let i = 0; i < 4 * 60; i++) sim.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+  const pal = spec.smokeColors ?? [];
+  const smoke = sim.particles.filter((p) => p.kind === 'smoke');
+  const off = smoke.filter((p) => !pal.some((c) => c[0] === p.col[0] && c[1] === p.col[1] && c[2] === p.col[2]));
+  const used = pal.filter((c) => smoke.some((p) => p.col[0] === c[0] && p.col[1] === c[1] && p.col[2] === c[2]));
+  check(
+    'PC-21 smoke is red/yellow only',
+    pal.length === 2 && smoke.length > 0 && off.length === 0,
+    `${smoke.length} particles, ${off.length} off-palette`,
+  );
+  check('PC-21 smoke alternates both colours', used.length === pal.length, used.map((c) => `rgb(${c.join(',')})`).join(' | '));
 }
 
 

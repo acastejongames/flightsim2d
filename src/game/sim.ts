@@ -1661,11 +1661,19 @@ export class Sim {
       if (!this.grounded && this.g > 4.2 && this.tas > 90) {
         this.addParticle('trail', this.x - c * 1.5, this.y - 0.2, 0, 0, 1.6, 0.35, 0.8, [255, 255, 255]);
       }
-      // aerobatic smoke: a cycling colour trail from the tail
+      // aerobatic smoke: a colour trail from the tail. Aircraft with a display
+      // palette (PC-21: red/yellow) alternate bands of their colours, the rest
+      // cycle through the rainbow.
       if (this.smokeOn) {
         this.smokeT += 0.03;
-        const hue = (this.smokeT * 60) % 360;
-        const col = hslToRgb(hue / 360, 0.85, 0.6);
+        let col: [number, number, number];
+        if (s.smokeColors && s.smokeColors.length > 0) {
+          const band = Math.floor(this.smokeT / 1.1) % s.smokeColors.length;
+          col = s.smokeColors[band];
+        } else {
+          const hue = (this.smokeT * 60) % 360;
+          col = hslToRgb(hue / 360, 0.85, 0.6);
+        }
         this.addParticle('smoke', tx, ty, -c * 1.5, 0.2, 2.4, 0.5, 2.6, col);
       }
       // exhaust haze

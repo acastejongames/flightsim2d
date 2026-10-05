@@ -247,6 +247,7 @@ export class Renderer {
     const ctx = this.ctx;
     this.fps += (1 / Math.max(dt, 0.001) - this.fps) * 0.05;
     extra.fps = this.fps;
+    extra.zoom = this.userZoom;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.updateCamera(sim, dt);
     this.updateMood(sim);

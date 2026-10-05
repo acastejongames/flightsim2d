@@ -73,6 +73,8 @@ export interface SimSettings {
   mission: Mission | null;
   /** free-play tuner: everything free, everything adjustable */
   sandbox?: SandboxTune | null;
+  /** phone/tablet: the coaching messages name the touch deck instead of the keys */
+  touch?: boolean;
 }
 
 interface Aero {
@@ -115,6 +117,8 @@ export class Sim {
   mode: WorldMode;
   tod: TimeOfDay;
   startAir: boolean;
+  /** touch deck in charge: hints point at the levers and chips, not at the keys */
+  touch = false;
   carrier: Carrier | null = null;
   time = 0;
   private acc = 0;
@@ -281,11 +285,18 @@ export class Sim {
       this.say(
         this.grounded
           ? this.mode === 'carrier'
-            ? t2(
-                'Press X (or hold →) for full throttle, then SPACE to launch from the catapult',
-                'Pulsa X (o mantén →) a tope y luego ESPACIO para lanzarte de la catapulta',
-              )
-            : t2('Hold → for throttle, pull ↑ at rotate speed', 'Mantén → para acelerar y tira ↑ a la velocidad de rotación')
+            ? this.touch
+              ? t2(
+                  'Push the THR lever to the top, then tap CAT to launch',
+                  'Sube la palanca ACEL a tope y toca CATAP para lanzarte',
+                )
+              : t2(
+                  'Press X (or hold →) for full throttle, then SPACE to launch from the catapult',
+                  'Pulsa X (o mantén →) a tope y luego ESPACIO para lanzarte de la catapulta',
+                )
+            : this.touch
+              ? t2('Push the THR lever, then pull the PITCH lever at rotate speed', 'Sube la palanca ACEL y tira de CABECEO a la velocidad de rotación')
+              : t2('Hold → for throttle, pull ↑ at rotate speed', 'Mantén → para acelerar y tira ↑ a la velocidad de rotación')
           : t2('You have the controls', 'Tienes el control'),
         'info',
         '',
@@ -527,7 +538,12 @@ export class Sim {
     this.hook = !this.hook;
     if (!this.hook && this.arrested) {
       this.arrested = false;
-      this.say('Hook raised — wire released', 'info', 'Taxi clear. Press R to return to the catapult', 3);
+      this.say(
+        'Hook raised — wire released',
+        'info',
+        this.touch ? t2('Taxi clear. Tap RESET to return to the catapult', 'Pista libre. Toca REINICIO para volver a la catapulta') : 'Taxi clear. Press R to return to the catapult',
+        3,
+      );
     } else this.say(this.hook ? 'Tailhook DOWN' : 'Tailhook UP', 'info', '', 1.6);
   }
 
@@ -545,7 +561,12 @@ export class Sim {
     if (this.grounded) return this.say('Autothrottle available in flight', 'info');
     this.autoThr = !this.autoThr;
     if (this.autoThr) this.atTarget = Math.round(this.ias / 2) * 2;
-    this.say(this.autoThr ? `Autothrottle ON — ${Math.round(this.atTarget * 1.944)} kt` : 'Autothrottle OFF', 'info', this.autoThr ? '← → adjust speed' : '', 2.2);
+    this.say(
+      this.autoThr ? `Autothrottle ON — ${Math.round(this.atTarget * 1.944)} kt` : 'Autothrottle OFF',
+      'info',
+      this.autoThr ? (this.touch ? t2('the lever adjusts speed', 'la palanca ajusta la velocidad') : '← → adjust speed') : '',
+      2.2,
+    );
   }
 
   trim(d: number): void {
@@ -608,7 +629,7 @@ export class Sim {
     this.say(
       this.smokeOn ? t2('SMOKE ON', 'HUMO ON') : t2('SMOKE OFF', 'HUMO OFF'),
       'info',
-      t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
+      this.touch ? t2('the SMOKE chip toggles it', 'el botón HUMO lo activa') : t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
       2.5,
     );
   }
@@ -617,8 +638,13 @@ export class Sim {
     if (!this.alive) return;
     if (!this.carrier) return;
     if (this.trapped || (this.arrested && this.u - this.carrier.vx * this.hdg < 0.5)) return this.respawn();
-    if (!this.catHeld) return this.say('Not on the catapult — press R to reposition', 'info');
-    if (this.throttle < 0.85) return this.say('Set throttle to FULL before launch', 'warn', 'Hold → until the bar is full');
+    if (!this.catHeld) return this.say(this.touch ? t2('Not on the catapult — tap RESET', 'No estás en la catapulta: toca REINICIO') : 'Not on the catapult — press R to reposition', 'info');
+    if (this.throttle < 0.85)
+      return this.say(
+        'Set throttle to FULL before launch',
+        'warn',
+        this.touch ? t2('push the THR lever to the top', 'sube la palanca ACEL a tope') : 'Hold → until the bar is full',
+      );
     this.catHeld = false;
     this.catActive = true;
     this.parked = false;
@@ -1505,7 +1531,9 @@ export class Sim {
     this.say(
       t2(`TRAP! Wire #${w + 1}`, `¡ENGANCHADO! Cable nº${w + 1}`),
       kind,
-      `${grade} · ${this.sinkRate.toFixed(1)} m/s${note.length ? ` · ${note.join(' · ')}` : ''} · +${score} · ${t2('SPACE to relaunch', 'ESPACIO para relanzar')}`,
+      `${grade} · ${this.sinkRate.toFixed(1)} m/s${note.length ? ` · ${note.join(' · ')}` : ''} · +${score} · ${
+        this.touch ? t2('CAT to relaunch', 'CATAP para relanzar') : t2('SPACE to relaunch', 'ESPACIO para relanzar')
+      }`,
       8,
     );
   }

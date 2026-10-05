@@ -34,6 +34,8 @@ interface Shot {
   compact?: boolean;
   /** keep the aircraft on the ground (banner + coaching messages visible) */
   grounded?: boolean;
+  /** clear the message log so the shot shows the panels only */
+  quiet?: boolean;
   barW?: number;
   zoom?: number;
   paused?: boolean;
@@ -105,6 +107,7 @@ export async function mobileShots(shots: Shot[]): Promise<void> {
       if (o.x !== undefined) sim.x = o.x;
       sim.catHeld = false;
       hold();
+      if (o.quiet) sim.msgs.length = 0;
       if (o.kill) {
         sim.alive = false;
         sim.crashReason = 'Stalled into the water';
@@ -118,14 +121,18 @@ export async function mobileShots(shots: Shot[]): Promise<void> {
 }
 
 if (process.argv[1]?.includes('mshot')) {
+  // previews for the repository owner (written outside the git tree)
   const coast = await findCoast(2000);
   await mobileShots([
+    { file: '/home/user/preview-movil/1-movil-vertical.png', W: 390, H: 844, mode: 'open', ac: 'pc21', agl: 240, mission: true, quiet: true },
     { file: '/tmp/m-open-portrait.png', W: 390, H: 844, mode: 'open', ac: 'pc21', agl: 240, mission: true },
     { file: '/tmp/m-open-landscape.png', W: 844, H: 390, mode: 'open', ac: 'pc21', agl: 240, mission: true, deckH: 96 },
     { file: '/tmp/m-carrier.png', W: 390, H: 844, mode: 'carrier', ac: 'ef18', y: 100, gear: 1, flaps: 2, hook: true, wx: 1200 },
+    { file: '/home/user/preview-movil/2-movil-portaaviones.png', W: 390, H: 844, mode: 'carrier', ac: 'ef18', y: 118, gear: 1, flaps: 2, hook: true, wx: 1200, quiet: true },
     { file: '/tmp/m-carrier-strip.png', W: 390, H: 844, mode: 'carrier', ac: 'ef18', y: 118, gear: 1, flaps: 2, hook: true, wx: 1200 },
     { file: '/tmp/m-coast.png', W: 390, H: 844, mode: 'open', ac: 'cn235', agl: 120, x: coast, gear: 1, flaps: 1, weather: 'fog' },
     { file: '/tmp/m-crash.png', W: 390, H: 844, mode: 'open', ac: 'pc21', agl: 200, mission: true, deckH: 190, kill: true },
+    { file: '/home/user/preview-movil/3-movil-horizontal.png', W: 844, H: 390, mode: 'open', ac: 'pc21', agl: 240, mission: true, deckH: 96, quiet: true },
     { file: '/tmp/m-landscape-deck.png', W: 844, H: 390, mode: 'open', ac: 'pc21', agl: 240, mission: true, deckH: 96 },
     { file: '/tmp/m-desktop.png', W: 1280, H: 720, mode: 'open', ac: 'ef18', agl: 300, mission: true, compact: false },
     { file: '/tmp/m-parked.png', W: 390, H: 844, mode: 'open', ac: 'pc21', agl: 2, mission: true, grounded: true, deckH: 130 },

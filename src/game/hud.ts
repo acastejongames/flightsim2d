@@ -11,6 +11,18 @@ export interface HudExtra {
   showHelp: boolean;
   /** time acceleration in force (1 = real time) */
   warp?: number;
+  /** user zoom multiplier in force (1 = default camera) */
+  zoom?: number;
+  /**
+   * Phone layout: one objective strip, one telemetry line and the landing aids
+   * only. The touch control deck lives in the DOM below the canvas, so the HUD
+   * has to know how much room it takes.
+   */
+  compact?: boolean;
+  /** CSS px covered by the touch deck at the bottom of the screen */
+  insetBottom?: number;
+  /** CSS px covered by the top button bar: the compact strip starts under it */
+  insetTop?: number;
 }
 
 /** radar echoes are recomputed a few times per second, not every frame */
@@ -189,13 +201,36 @@ function ols(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim): voi
   const tdX = (sim.carrier ? sim.carrier.x : 0) + 82;
   const rng = Math.max(0, (tdX - sim.x) / 1000);
   label(ctx, `${rng.toFixed(1)} km`, x, y + h + 32 - 2, 'center');
+  // LSO grade when flying carrier qualification
+  const run = sim.mission;
+  if (run && run.mission.mustTrap) {
+    const last = (sim as any).lsoGrade as string;
+    if (last) {
+      const col = last.includes('PERFECT') || last.includes('OK') ? '#7dffa6' : last.includes('FAIR') ? '#8fd0ff' : last.includes('WAVEOFF') ? '#ff6b5e' : '#ffc65a';
+      ctx.font = `800 9px ${SANS}`;
+      ctx.fillStyle = col;
+      ctx.textAlign = 'center';
+      ctx.fillText(last, x, y + h + 44);
+      const detail = (sim as any).lsoDetail as string;
+      if (detail) {
+        ctx.font = `600 8px ${MONO}`;
+        ctx.fillStyle = 'rgba(200,215,235,0.78)';
+        // truncate
+        const t = detail.length > 22 ? detail.slice(0,22)+'…' : detail;
+        ctx.fillText(t, x, y + h + 54);
+      }
+    } else if (run.trapsDone > 0) {
+      label(ctx, `TRAPS ${run.trapsDone}/${run.mission.trapsRequired}`, x, y + h + 44, 'center');
+    }
+  }
 }
 
 // ---------------------------------------------------------------- mission & weather panels
 function missionPanel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, run: MissionRun, sim: Sim): void {
   const m = run.mission;
   const lang = getLang();
-  const h = 96;
+  const isSar = m.kind === 'sar' && (m as any).sar;
+  const h = isSar ? 106 : 96;
   panel(ctx, x, y, w, h);
   ctx.textAlign = 'left';
   ctx.font = `800 12px ${SANS}`;
@@ -253,6 +288,42 @@ function missionPanel(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
       ctx.fillStyle = '#ffd24a';
       ctx.fillText(`${ap.name} ${ap.x < sim.x ? '<' : '>'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`, x + 12, y + 84);
     }
+  }
+  // SAR: datum distance + raft distance + drop status (uses the extra line under the bar)
+  const sar = (m as any).sar as { datumX:number; targetX:number; searchRadius:number } | undefined;
+  if (m.kind === 'sar' && sar) {
+    // expand panel a bit when SAR
+    // draw datum / raft distances under the progress bar
+    const dDatum = Math.abs(sar.datumX - sim.x) / 1000;
+    const dRaft = Math.abs(sar.targetX - sim.x) / 1000;
+    ctx.font = `600 9px ${MONO}`;
+    ctx.fillStyle = 'rgba(190,215,235,0.88)';
+    // left: DATUM x.x km, right: RAFT x.x km (raft hidden until spotted but show approx when close)
+    const showRaft = (run as any).sarSpotted || dRaft < 3.5;
+    ctx.textAlign = 'left';
+    ctx.fillText(`DATUM ${dDatum < 10 ? dDatum.toFixed(1) : Math.round(dDatum)} km`, x + 12, y + 96);
+    if (showRaft) ctx.fillText(`RAFT ${dRaft.toFixed(1)} km`, x + 84, y + 96);
+    else {
+      ctx.fillStyle = 'rgba(160,185,215,0.45)';
+      ctx.fillText('RAFT ??', x + 84, y + 96);
+    }
+    if ((run as any).sarDropDone) {
+      const dist = (run as any).sarDropDist as number;
+      const grade = (run as any).sarDropGradeEn as string;
+      ctx.textAlign = 'right';
+      ctx.font = `700 9px ${MONO}`;
+      ctx.fillStyle = dist < 25 ? '#7dffa6' : dist < 70 ? '#ffd24a' : '#ff9f6b';
+      ctx.fillText(`${grade} ${dist.toFixed(0)}m`, x + w - 12, y + 96);
+      ctx.textAlign = 'start';
+    } else if ((run as any).sarSpotted) {
+      ctx.textAlign = 'right';
+      ctx.font = `700 9px ${SANS}`;
+      ctx.fillStyle = '#ffd24a';
+      ctx.fillText('DROP [D]', x + w - 12, y + 96);
+      ctx.textAlign = 'start';
+    }
+    // make panel taller visually: overlay a second row already counted in y+96, so caller must have left room
+    // we handled by using the same 96 height but text is within; no extra height needed
   }
   ctx.textAlign = 'right';
   ctx.font = `700 11px ${MONO}`;
@@ -530,7 +601,7 @@ function windStrip(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim
   void H;
 }
 
-function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: number, warp = 1): void {
+function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: number, warp = 1, zoom?: number): void {
   const items: { txt: string; col: string }[] = [];
   if (sim.ice > 0.05) items.push({ txt: `${t2('ICE', 'HIELO')} ${Math.round(sim.ice * 100)}%`, col: '#9fe8ff' });
   if (sim.damage > 0.05) items.push({ txt: `${t2('DMG', 'DAÑO')} ${Math.round(sim.damage * 100)}%`, col: '#ffc65a' });
@@ -541,7 +612,16 @@ function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: numb
   if (sim.sandbox?.on) items.push({ txt: t2('SANDBOX · U', 'SANDBOX · U'), col: '#7ef0c0' });
   if (sim.altHold !== null) items.push({ txt: `AP ALT · O`, col: '#7dffa6' });
   if (sim.smokeOn) items.push({ txt: t2('SMOKE ON', 'HUMO ON'), col: '#ff9ad5' });
+  if ((sim as any).sarKit && (sim as any).sarKit.alive) items.push({ txt: t2('KIT FALLING', 'KIT CAYENDO'), col: '#ffd24a' });
+  if (sim.mission && (sim.mission as any).sarDropDone) {
+    const d = (sim.mission as any).sarDropDist as number;
+    const txt = d < 20 ? 'DROP PERFECT' : d < 50 ? 'DROP GOOD' : 'DROP OK';
+    items.push({ txt: t2(txt, txt), col: d < 25 ? '#7dffa6' : '#ffd24a' });
+  }
+  if ((sim as any).lsoGrade) items.push({ txt: (sim as any).lsoGrade, col: '#8fd0ff' });
+  if ((sim as any).lsoWaveoff) items.push({ txt: t2('WAVEOFF', 'FRUSTRADA'), col: '#ff6b5e' });
   if (warp > 1) items.push({ txt: `TIME ×${warp}`, col: '#ffd24a' });
+  if (zoom !== undefined && Math.abs(zoom - 1) > 0.05) items.push({ txt: `ZOOM ×${zoom.toFixed(2)}`, col: '#8fd0ff' });
   if (!items.length) return;
   let x = W / 2;
   const totalW = items.reduce((a, i) => a + i.txt.length * 6.4 + 18, 0);
@@ -564,23 +644,43 @@ function hazardChips(ctx: CanvasRenderingContext2D, W: number, sim: Sim, y: numb
   ctx.textAlign = 'start';
 }
 
-function missionBannerDraw(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim): void {
+function missionBannerDraw(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim, compact = false, top = 0): number {
   const run = sim.mission;
-  if (!run) return;
+  if (!run) return 0;
   const id = run.mission.id;
   if (!missionBanner || missionBanner.id !== id) missionBanner = { id, t: sim.time };
   const age = sim.time - missionBanner.t;
-  if (age > 8 || !sim.alive || sim.grounded === false) return;
+  if (age > 8 || !sim.alive || sim.grounded === false) return 0;
   const a = age < 0.6 ? age / 0.6 : clamp((8 - age) / 1.4, 0, 1);
-  if (a <= 0.01) return;
+  if (a <= 0.01) return 0;
   const m = run.mission;
   const lang = getLang();
   const w = Math.min(560, W - 60);
   const x = (W - w) / 2;
-  const y = H * 0.16;
+  const y = compact ? top + 10 : H * 0.16;
   ctx.save();
   ctx.globalAlpha = a;
-  panel(ctx, x, y, w, 108);
+  panel(ctx, x, y, w, compact ? 74 : 108);
+  if (compact) {
+    // phone: title, objective and the numbers — the full brief lives in the pause menu
+    ctx.textAlign = 'center';
+    ctx.font = `800 9px ${SANS}`;
+    ctx.fillStyle = '#ffd24a';
+    ctx.fillText(lang === 'es' ? 'CONTRATO' : 'CONTRACT', W / 2, y + 15);
+    ctx.font = `800 15px ${SANS}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(fit(ctx, lang === 'es' ? m.titleEs : m.titleEn, w - 24), W / 2, y + 34);
+    ctx.font = `600 11.5px ${SANS}`;
+    ctx.fillStyle = 'rgba(225,235,250,0.92)';
+    ctx.fillText(fit(ctx, run.objective(lang), w - 24), W / 2, y + 52);
+    ctx.font = `700 10px ${MONO}`;
+    ctx.fillStyle = '#ffd24a';
+    const wx = lang === 'es' ? sim.weather.preset.es : sim.weather.preset.en;
+    ctx.fillText(fit(ctx, `${wx}  ·  ${m.money} cr  ·  ${m.xp} XP  ·  ${t('difficulty')} ${m.difficulty}/5`, w - 24), W / 2, y + 67);
+    ctx.restore();
+    ctx.textAlign = 'start';
+    return 74;
+  }
   ctx.textAlign = 'center';
   ctx.font = `800 11px ${SANS}`;
   ctx.fillStyle = '#ffd24a';
@@ -613,9 +713,350 @@ function missionBannerDraw(ctx: CanvasRenderingContext2D, W: number, H: number, 
   );
   ctx.restore();
   ctx.textAlign = 'start';
+  return 108;
+}
+
+// ---------------------------------------------------------------- compact (phone) HUD
+/** Truncate `text` with an ellipsis so it fits in `maxW` px at the current font. */
+function fit(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxW) t = t.slice(0, -1);
+  return `${t.trimEnd()}…`;
+}
+
+/** Word-wrap into at most `maxLines` lines; the last one is ellipsised. */
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const wd of words) {
+    const probe = line ? `${line} ${wd}` : wd;
+    if (line && lines.length < maxLines - 1 && ctx.measureText(probe).width > maxW) {
+      lines.push(line);
+      line = wd;
+    } else line = probe;
+  }
+  if (line) lines.push(fit(ctx, line, maxW));
+  return lines.slice(0, maxLines);
+}
+
+/** Distance to a world x, as compact text. */
+function kmText(dx: number): string {
+  const km = Math.abs(dx) / 1000;
+  return `${dx < 0 ? '←' : '→'} ${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
+}
+
+/**
+ * Landing aid for phones: one thin strip with the centreline offset and the
+ * glidepath error, drawn just above the touch deck. Only shown while it is
+ * actually useful (gear coming down or low on approach).
+ */
+function approachStrip(ctx: CanvasRenderingContext2D, W: number, by: number, sim: Sim, g: { dev: number; dist: number }): void {
+  const w = Math.min(272, W - 16);
+  const x = (W - w) / 2;
+  const y = by - 40;
+  panel(ctx, x, y, w, 40);
+  ctx.textAlign = 'left';
+
+  // --- centreline: where the aircraft sits across the runway axis
+  label(ctx, t2('CENTRELINE', 'EJE'), x + 12, y + 13);
+  const tw = 84;
+  const cx = x + 12;
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  rr(ctx, cx, y + 17, tw, 8, 4);
+  ctx.fill();
+  const half = 18;
+  const pxm = (off: number) => cx + tw / 2 + (clamp(off, -half * 1.8, half * 1.8) / (half * 1.8)) * (tw / 2 - 5);
+  ctx.fillStyle = 'rgba(120,200,255,0.4)';
+  ctx.fillRect(pxm(-half), y + 17, 1.5, 8);
+  ctx.fillRect(pxm(half), y + 17, 1.5, 8);
+  ctx.fillRect(cx + tw / 2 - 0.75, y + 17, 1.5, 8);
+  const off = sim.offset;
+  ctx.fillStyle = Math.abs(off) < half ? '#7dffa6' : Math.abs(off) < half * 1.8 ? '#ffc65a' : '#ff6b5e';
+  ctx.beginPath();
+  ctx.moveTo(pxm(off), y + 16);
+  ctx.lineTo(pxm(off) - 4, y + 25);
+  ctx.lineTo(pxm(off) + 4, y + 25);
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = `700 10px ${MONO}`;
+  ctx.fillStyle = 'rgba(220,232,248,0.95)';
+  ctx.fillText(`${off >= 0 ? '+' : '−'}${Math.abs(off).toFixed(1)} m`, cx + tw + 7, y + 26);
+  ctx.font = `600 9.5px ${MONO}`;
+  ctx.fillStyle = 'rgba(160,185,215,0.85)';
+  ctx.fillText(`${t2('CRAB', 'DERIVA')} ${sim.crab.toFixed(0)}°`, cx, y + 36);
+
+  // --- glidepath: high / low against the ideal 3° path
+  const dev = clamp(g.dev, -60, 60);
+  const col = Math.abs(dev) < 14 ? '#7dffa6' : Math.abs(dev) < 40 ? '#ffc65a' : '#ff6b5e';
+  label(ctx, t2('GLIDEPATH', 'SENDA'), x + w - 12, y + 13, 'right');
+  ctx.textAlign = 'right';
+  ctx.font = `800 12px ${MONO}`;
+  ctx.fillStyle = col;
+  ctx.fillText(`${dev > 14 ? '↑' : dev < -14 ? '↓' : 'OK'} ${Math.abs(dev) < 14 ? t2('ON PATH', 'EN SENDA') : `${Math.abs(Math.round(dev))} m`}`, x + w - 12, y + 28);
+  ctx.font = `600 9.5px ${MONO}`;
+  ctx.fillStyle = 'rgba(160,185,215,0.85)';
+  const dist = g.dist < 1000 ? `${Math.round(g.dist / 10) * 10} m` : `${(g.dist / 1000).toFixed(1)} km`;
+  ctx.fillText(`${t2('TO THR', 'A UMBRAL')} ${dist}`, x + w - 12, y + 38);
+  ctx.textAlign = 'start';
+}
+
+/** Carrier meatball, phone sized: a slim vertical scale on the right edge. */
+function olsCompact(ctx: CanvasRenderingContext2D, W: number, by: number, err: number): void {
+  const x = W - 26;
+  const h = 104;
+  const y = by - h - 10;
+  panel(ctx, W - 44, y - 20, 40, h + 34);
+  label(ctx, 'OLS', x, y - 8, 'center');
+  const cy = y + h / 2;
+  const s = h / 2 - 10;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  rr(ctx, x - 5, y, 10, h, 5);
+  ctx.fill();
+  for (const dy of [-16, 16]) {
+    ctx.fillStyle = '#35e07a';
+    ctx.beginPath();
+    ctx.arc(x + dy, cy, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const ball = clamp(cy - (err / 1.3) * s * 0.62, y + 8, y + h - 8);
+  const col = Math.abs(err) > 1 ? '#ff4040' : err < -0.5 ? '#ff9f2e' : '#ffc233';
+  ctx.save();
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.arc(x, ball, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.font = `700 9px ${SANS}`;
+  ctx.fillStyle = col;
+  ctx.fillText(err > 0.5 ? 'HIGH' : err < -0.5 ? 'LOW' : 'OK', x, y + h + 10);
+  ctx.textAlign = 'start';
+}
+
+/**
+ * The whole phone HUD: a hairline progress bar, one objective strip with a
+ * telemetry line, the warnings and the landing aids. Nothing else.
+ */
+function hudCompact(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim, extra: HudExtra): void {
+  const lang = getLang();
+  const run = sim.mission;
+  const pad = 8;
+  const insetB = extra.insetBottom ?? 0;
+  const deckY = H - insetB;
+  // the system bar (pause / mute / respawn) sits top-right; the strip runs below it
+  const top = pad + (extra.insetTop ?? 0);
+  const stripW = Math.max(140, W - pad * 2);
+  const total = run ? run.mission.gates.length : 0;
+  const passed = run ? run.mission.gates.filter((g) => g.passed).length : 0;
+  const timeLeft = run ? run.timeLeft : null;
+
+  // ---------------- progress hairline across the top edge
+  if (run) {
+    let frac = 0;
+    let col = '#5fe0ff';
+    if (run.status === 'done') {
+      frac = 1;
+      col = '#7dffa6';
+    } else if (run.status === 'failed') {
+      frac = 1;
+      col = '#ff6b5e';
+    } else if (total > 0) frac = passed / total;
+    else if (timeLeft !== null && run.mission.timeLimit) {
+      frac = clamp(timeLeft / run.mission.timeLimit, 0, 1);
+      col = frac < 0.15 ? '#ff6b5e' : frac < 0.35 ? '#ffc65a' : '#7dffa6';
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    rr(ctx, pad, top, stripW, 3, 1.5);
+    ctx.fill();
+    ctx.fillStyle = col;
+    rr(ctx, pad, top, Math.max(2, stripW * clamp(frac, 0.02, 1)), 3, 1.5);
+    ctx.fill();
+  }
+
+  // ---------------- objective strip (objective + telemetry)
+  const sy = top + 8;
+  const stripH = 46;
+  panel(ctx, pad, sy, stripW, stripH);
+  ctx.textAlign = 'left';
+
+  // objective / mode line
+  ctx.font = `700 11px ${SANS}`;
+  const objText = run ? run.objective(lang) : sim.mode === 'carrier' ? t('carrierOps') : t('openWorld');
+  const dotCol = run ? (run.status === 'done' ? '#7dffa6' : run.status === 'failed' ? '#ff6b5e' : '#5fe0ff') : '#8fd0ff';
+  ctx.fillStyle = dotCol;
+  ctx.beginPath();
+  ctx.arc(pad + 12, sy + 14, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#e8f1ff';
+  ctx.fillText(fit(ctx, objText, stripW - 28), pad + 22, sy + 18);
+
+  // right-hand cell: progress, timer or distance
+  let rightTxt = '';
+  let rightCol = '#8fd0ff';
+  if (run) {
+    if (run.status === 'done') {
+      rightTxt = t2('DONE', 'HECHO');
+      rightCol = '#7dffa6';
+    } else if (run.status === 'failed') {
+      rightTxt = t2('FAILED', 'FALLIDO');
+      rightCol = '#ff6b5e';
+    } else if (timeLeft !== null) {
+      const mm = Math.floor(timeLeft / 60);
+      const ss = Math.floor(timeLeft % 60);
+      rightTxt = `T-${mm}:${ss.toString().padStart(2, '0')}`;
+      rightCol = timeLeft < 45 ? '#ff6b5e' : timeLeft < 120 ? '#ffc65a' : '#7dffa6';
+    } else if (total > 0) rightTxt = `${passed}/${total}`;
+    const dest = run.nextGate ? run.nextGate.x : run.mission.landingAirport !== null ? getAirport(run.mission.landingAirport).x : null;
+    if (dest !== null && run.status === 'active') rightTxt += `  ·  ${kmText(dest - sim.x)}`;
+  } else {
+    const near = airportsNear(sim.x, 1)[0];
+    rightTxt = sim.carrier ? kmText(sim.carrier.x + 150 - sim.x) : near ? `${near.name} ${kmText(near.x - sim.x)}` : '';
+  }
+  ctx.font = `700 10px ${MONO}`;
+  const rightW = Math.min(ctx.measureText(rightTxt).width, stripW - 90);
+  ctx.fillStyle = rightCol;
+  ctx.textAlign = 'right';
+  ctx.fillText(fit(ctx, rightTxt, stripW - 24), pad + stripW - 12, sy + 35);
+  ctx.textAlign = 'left';
+
+  // left of that: speed, altitude, sink
+  const kt = Math.round(sim.ias * 1.944);
+  const aglFt = Math.max(0, sim.agl) * 3.281;
+  const altTxt = sim.grounded
+    ? t2('ON GROUND', 'EN TIERRA')
+    : aglFt < 3000
+      ? `${Math.round(aglFt / 10) * 10} ft AGL`
+      : `${Math.round((sim.y * 3.281) / 1000).toLocaleString('en-US')}k ft`;
+  const vsTxt = `${sim.vy >= 0 ? '+' : '−'}${Math.abs(sim.vy).toFixed(1)} m/s`;
+  const limit = pad + stripW - 16 - rightW;
+  ctx.font = `600 10px ${MONO}`;
+  let cx = pad + 12;
+  const dim = ' · ';
+  const dimFor = () => {
+    const w = ctx.measureText(dim).width;
+    const more = sim.grounded ? 0 : 46; // room for the sink rate
+    if (cx + w + more > limit) return false;
+    ctx.fillStyle = 'rgba(160,185,215,0.5)';
+    ctx.fillText(dim, cx, sy + 35);
+    cx += w;
+    return true;
+  };
+  const seg = (txt: string, col: string, gap = 0) => {
+    const w = ctx.measureText(txt).width;
+    if (cx + w > limit) return false;
+    ctx.fillStyle = col;
+    ctx.fillText(txt, cx, sy + 35);
+    cx += w + gap;
+    return true;
+  };
+  const speedCol = sim.stallWarn || sim.overspeed ? '#ff6b5e' : 'rgba(226,236,250,0.95)';
+  if (seg(`${kt} kt${' '.repeat(Math.max(1, 5 - String(kt).length))}`, speedCol)) {
+    if (dimFor()) {
+      seg(altTxt, 'rgba(200,215,235,0.9)');
+      if (!sim.grounded && dimFor()) seg(`VS ${vsTxt}`, sim.vy < -12 ? '#ffc65a' : 'rgba(200,215,235,0.9)');
+    }
+  }
+
+  // ---------------- mission briefing banner (just under the strip)
+  const bannerH = missionBannerDraw(ctx, W, H, sim, true, sy + stripH);
+
+  // ---------------- message log (compact, wrapped)
+  let my = sy + stripH + bannerH + 22;
+  for (const m of sim.msgs.slice(-2)) {
+    const fade = clamp(Math.min(m.t / 0.2, (m.dur - m.t) / 0.6), 0, 1);
+    const col = m.kind === 'good' ? '#7dffa6' : m.kind === 'warn' ? '#ffc65a' : m.kind === 'bad' ? '#ff6b5e' : '#e8f1ff';
+    ctx.globalAlpha = fade;
+    ctx.textAlign = 'center';
+    ctx.font = `800 15px ${SANS}`;
+    const lines = wrapLines(ctx, m.text, W - 32, 2);
+    lines.forEach((ln, i) => {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillText(ln, W / 2 + 1, my + i * 19 + 1);
+      ctx.fillStyle = col;
+      ctx.fillText(ln, W / 2, my + i * 19);
+    });
+    my += lines.length * 19;
+    if (m.sub) {
+      ctx.font = `500 11px ${SANS}`;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillText(m.sub, W / 2 + 1, my + 11);
+      ctx.fillStyle = 'rgba(235,242,255,0.92)';
+      ctx.fillText(m.sub, W / 2, my + 10);
+      my += 16;
+    }
+    my += 12;
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------------- warnings (the one thing that must never be missed)
+  const warns: { t: string; amber: boolean }[] = [];
+  if (sim.alive) {
+    if (sim.pullUp) warns.push({ t: 'PULL UP', amber: false });
+    if (sim.terrainAhead) warns.push({ t: 'TERRAIN AHEAD', amber: true });
+    if (sim.stallWarn) warns.push({ t: 'STALL', amber: false });
+    if (sim.overspeed) warns.push({ t: 'OVERSPEED', amber: false });
+    if (sim.engineOut) warns.push({ t: 'ENGINE OUT', amber: false });
+    if (sim.tooLowGear) warns.push({ t: 'GEAR', amber: false });
+    if (sim.windshear) warns.push({ t: t2('WINDSHEAR', 'CIZALLADURA'), amber: false });
+  }
+  if (warns.length) {
+    const flashRed = Math.floor(sim.time * 4) % 2 === 0;
+    const flashAmber = Math.floor(sim.time * 2) % 2 === 0;
+    ctx.textAlign = 'center';
+    ctx.font = `900 21px ${SANS}`;
+    warns.slice(0, 3).forEach((w, i) => {
+      ctx.fillStyle = w.amber ? (flashAmber ? '#ffb020' : '#8a5c14') : flashRed ? '#ff3b30' : '#ffb3ad';
+      ctx.fillText(w.t, W / 2, H * 0.27 + i * 25);
+    });
+    ctx.textAlign = 'start';
+  }
+
+  // ---------------- landing aids, stacked just above the touch deck
+  let by = deckY - 12;
+  const g = sim.alive && !sim.grounded ? sim.glidepath() : null;
+  if (g && (sim.gearCmd > 0.5 || sim.agl < 650)) {
+    approachStrip(ctx, W, by, sim, g);
+    by -= 48;
+  }
+  hazardChips(ctx, W, sim, by - 20, extra.warp ?? 1, extra.zoom);
+  const err = sim.alive ? sim.olsError() : null;
+  if (err !== null) olsCompact(ctx, W, by, err);
+
+  // ---------------- crash card
+  if (!sim.alive) {
+    ctx.fillStyle = 'rgba(30,0,0,0.4)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${W < 420 ? 26 : 34}px ${SANS}`;
+    const title = t('crashed').toUpperCase();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillText(title, W / 2 + 1.5, H * 0.34 + 1.5);
+    ctx.fillStyle = '#ff4a3d';
+    ctx.fillText(title, W / 2, H * 0.34);
+    ctx.font = `600 13px ${SANS}`;
+    ctx.fillStyle = '#ffe3df';
+    wrapLines(ctx, sim.crashReason, W - 40, 2).forEach((ln, i) => ctx.fillText(ln, W / 2, H * 0.34 + 22 + i * 17));
+    ctx.font = `500 10.5px ${SANS}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.fillText(t2('Respawn below to try again', 'Reaparece abajo para reintentar'), W / 2, H * 0.34 + 62);
+    ctx.textAlign = 'start';
+  }
+
+  if (extra.paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 0, W, H);
+  }
 }
 
 export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim: Sim, extra: HudExtra): void {
+  if (extra.compact) {
+    hudCompact(ctx, W, H, sim, extra);
+    return;
+  }
   const s = sim.spec;
   const kt = sim.ias * 1.944;
   const ft = sim.y * 3.281;
@@ -650,25 +1091,29 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
   missionBannerDraw(ctx, W, H, sim);
 
   // ---------------- warnings
-  const warns: string[] = [];
+  const warns: { t: string; amber: boolean }[] = [];
   if (sim.alive) {
-    if (sim.pullUp) warns.push('PULL UP');
-    if (sim.stallWarn) warns.push('STALL');
-    if (sim.overspeed) warns.push('OVERSPEED');
-    if (sim.engineOut) warns.push('ENGINE OUT');
-    if (!s.fixedGear && !sim.grounded && sim.gearCmd < 0.5 && sim.agl < 120 && sim.ias < 1.5 * s.vs && sim.vy < 0) warns.push('GEAR');
-    if (sim.g > 7) warns.push('G-LIMIT');
-    if (sim.ice > 0.35) warns.push(t2('ICING', 'HIELO'));
-    if (sim.damage > 0.6) warns.push(t2('DAMAGE', 'DAÑOS'));
-    if (sim.air && sim.air.micro > 0.4 && !sim.grounded) warns.push(t2('SHEAR', 'CIZALLADURA'));
+    if (sim.pullUp) warns.push({ t: 'PULL UP', amber: false });
+    // amber caution ahead of the red warning: terrain is inside the
+    // projected flight path with time to climb or turn away
+    if (sim.terrainAhead) warns.push({ t: 'TERRAIN AHEAD', amber: true });
+    if (sim.stallWarn) warns.push({ t: 'STALL', amber: false });
+    if (sim.overspeed) warns.push({ t: 'OVERSPEED', amber: false });
+    if (sim.engineOut) warns.push({ t: 'ENGINE OUT', amber: false });
+    if (sim.tooLowGear) warns.push({ t: 'GEAR', amber: false });
+    if (sim.g > 7) warns.push({ t: 'G-LIMIT', amber: false });
+    if (sim.ice > 0.35) warns.push({ t: t2('ICING', 'HIELO'), amber: false });
+    if (sim.damage > 0.6) warns.push({ t: t2('DAMAGE', 'DAÑOS'), amber: false });
+    if (sim.windshear) warns.push({ t: t2('WINDSHEAR', 'CIZALLADURA'), amber: false });
   }
   if (warns.length) {
-    const flash = Math.floor(sim.time * 4) % 2 === 0;
+    const flashRed = Math.floor(sim.time * 4) % 2 === 0;
+    const flashAmber = Math.floor(sim.time * 2) % 2 === 0;
     ctx.textAlign = 'center';
     ctx.font = `900 30px ${SANS}`;
     warns.forEach((w, i) => {
-      ctx.fillStyle = flash ? '#ff3b30' : '#ffb3ad';
-      ctx.fillText(w, W / 2, H * 0.3 + i * 36);
+      ctx.fillStyle = w.amber ? (flashAmber ? '#ffb020' : '#8a5c14') : flashRed ? '#ff3b30' : '#ffb3ad';
+      ctx.fillText(w.t, W / 2, H * 0.3 + i * 36);
     });
   }
 
@@ -803,8 +1248,8 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
   {
     const w = 244;
     const x = W - w - 14;
-    const y = H - 146;
-    panel(ctx, x, y, w, 132);
+    const y = H - 168;
+    panel(ctx, x, y, w, 154);
     // throttle bar
     const bx = x + 18;
     const by = y + 16;
@@ -863,6 +1308,7 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
     chip(ctx, sim.parked || sim.input.brake || sim.airbrake > 0.5 ? 'BRAKE' : 'BRAKE', nx + cw + 6, y + 80, 76, sim.parked || sim.input.brake, '#ff7a6b');
     chip(ctx, 'ASSIST', nx, y + 104, cw, sim.assist, '#b69cff');
     chip(ctx, 'A/THR', nx + cw + 6, y + 104, 76, sim.autoThr, '#7dffa6');
+    chip(ctx, sim.spoilerPos > 0.5 ? 'SPLR UP' : 'SPLR DN', nx, y + 128, cw + 6 + 76, sim.spoilerPos > 0.5, '#8fd0ff');
   }
 
   // ---------------- wind & centreline strip
@@ -877,8 +1323,8 @@ export function drawHUD(ctx: CanvasRenderingContext2D, W: number, H: number, sim
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   const hint =
     sim.mode === 'carrier'
-      ? '↑↓ pitch · ←→ throttle · J/L rudder · SPACE catapult · G gear · F flaps · H hook · B brake · T turn · Y assist · K auto-thrust · R reset · ESC menu'
-      : '↑↓ pitch · ←→ throttle · J/L rudder · G gear · F flaps · B brake · T turn · Y assist · K auto-thrust · R respawn · ESC menu';
+      ? '↑↓ pitch · ←→ throttle · J/L rudder · SPACE catapult · G gear · F flaps · H hook · B brake · C spoilers · T turn · Y assist · K auto-thrust · R reset · ESC menu'
+      : '↑↓ pitch · ←→ throttle · J/L rudder · G gear · F flaps · B brake · C spoilers · T turn · Y assist · K auto-thrust · R respawn · ESC menu';
   if (W > 900) ctx.fillText(hint, W / 2, H - 6);
 
   // ---------------- crash overlay

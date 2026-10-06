@@ -44,6 +44,7 @@ export interface AirframeDef {
 export const AIRFRAMES: Record<AircraftId, AirframeDef> = {
   pc21: { id: 'pc21', price: 0, rank: 0 },
   cn235: { id: 'cn235', price: 34000, rank: 2 },
+  cn235mpa: { id: 'cn235mpa', price: 39500, rank: 2 },
   ef18: { id: 'ef18', price: 46000, rank: 3 },
   typhoon: { id: 'typhoon', price: 68000, rank: 4 },
 };
@@ -149,6 +150,9 @@ export const MEDALS: MedalDef[] = [
   { id: 'ace', icon: 'trophy', en: 'Ace', es: 'As', descEn: 'Complete 5 contracts in a row.', descEs: 'Completa 5 contratos seguidos.' },
   { id: 'jet', icon: 'jet', en: 'Jet Jockey', es: 'Piloto de jet', descEn: 'Buy the F/A-18 Hornet.', descEs: 'Compra el F/A-18 Hornet.' },
   { id: 'hardcore', icon: 'flame', en: 'No Assist', es: 'Sin ayudas', descEn: 'Land with flight assist off.', descEs: 'Aterriza con la ayuda de vuelo desactivada.' },
+  { id: 'sar_splash', icon: 'chute', en: 'Splash On Target', es: 'En el blanco', descEn: 'Drop the SAR kit within 30 m of the raft.', descEs: 'Suelta el kit SAR a menos de 30 m de la balsa.' },
+  { id: 'sar_master', icon: 'chute', en: 'SAR Master', es: 'Maestro SAR', descEn: 'Complete 5 SAR contracts.', descEs: 'Completa 5 contratos SAR.' },
+  { id: 'lso_ok', icon: 'anchor', en: 'LSO Says OK', es: 'El LSO dice OK', descEn: 'Grade an OK 3-wire trap.', descEs: 'Consigue un OK con el 3er cable.' },
 ];
 
 export const MEDAL_BY_ID: Record<string, MedalDef> = MEDALS.reduce((a, m) => ((a[m.id] = m), a), {} as Record<string, MedalDef>);
@@ -184,6 +188,7 @@ export interface Profile {
     stormFlights: number;
     nightLandings: number;
     crosswindLandings: number;
+    sarMissions: number;
   };
 }
 
@@ -217,12 +222,13 @@ export const emptyProfile = (): Profile => ({
     stormFlights: 0,
     nightLandings: 0,
     crosswindLandings: 0,
+    sarMissions: 0,
   },
 });
 
 const KEY = 'skybound.profile.v1';
 
-const FLEET: AircraftId[] = ['pc21', 'cn235', 'ef18', 'typhoon'];
+const FLEET: AircraftId[] = ['pc21', 'cn235', 'cn235mpa', 'ef18', 'typhoon'];
 /** Old saves referred to the retired vector aircraft; map them onto the fleet. */
 const LEGACY_AIRCRAFT: Record<string, AircraftId> = {
   sparrow: 'pc21',
@@ -324,6 +330,9 @@ export interface FlightSummary {
   assist: boolean;
   events: string[];
   notes: string[];
+  sarDropDist: number | null;
+  lsoGrade: string | null;
+  missionKind: string | null;
 }
 
 export interface AwardResult {
@@ -401,6 +410,7 @@ export function award(profile: Profile, s: FlightSummary): AwardResult {
     profile.stats.missions += 1;
     profile.stats.streak += 1;
     profile.stats.bestStreak = Math.max(profile.stats.bestStreak, profile.stats.streak);
+    if (s.missionKind === 'sar') (profile.stats as any).sarMissions = ((profile.stats as any).sarMissions ?? 0) + 1;
   } else if (s.missionFailed) {
     profile.stats.missionsFailed += 1;
     profile.stats.streak = 0;
@@ -430,6 +440,9 @@ export function award(profile: Profile, s: FlightSummary): AwardResult {
   candidate('ace', st.bestStreak >= 5);
   candidate('jet', profile.owned.some((id) => id === 'ef18' || id === 'typhoon'));
   candidate('hardcore', !s.assist && s.landings > 0);
+  candidate('sar_splash', s.sarDropDist !== null && s.sarDropDist < 30 && s.missionDone);
+  candidate('sar_master', st.missions >= 5 && s.missionKind === 'sar' ? (profile.stats as any).sarMissions >= 5 : false);
+  candidate('lso_ok', !!s.lsoGrade && s.lsoGrade.includes('OK'));
 
   const newMedals: MedalDef[] = [];
   for (const id of ev) {

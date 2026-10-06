@@ -179,11 +179,21 @@ export class Weather {
     this.shiftIn = this.preset.id === 'dynamic' ? 25 : 120;
   }
 
-  constructor(id: WeatherId, _mode: WorldMode) {
+  /** world the weather lives in — the cloud base is AGL, so open mode needs the terrain */
+  private mode: WorldMode;
+
+  constructor(id: WeatherId, mode: WorldMode) {
     this.id = id;
+    this.mode = mode;
     this.preset = WX[id] ?? WX.clear;
     this.blended = NUM_KEYS.map((k) => this.preset[k] as number);
     if (this.preset.id === 'dynamic') this.shiftIn = 25;
+  }
+
+  /** cloud base in metres MSL: preset ceiling (AGL, like a METAR) over local terrain */
+  private cloudBase(x: number): number {
+    const ground = this.mode === 'carrier' ? 0 : Math.max(0, terrainHeight(x, this.mode));
+    return ground + this.v('ceiling');
   }
 
   /** current numeric value of a preset field, after any front blending */
@@ -206,7 +216,7 @@ export class Weather {
   cloudAt(x: number, y: number): number {
     const cover = this.coverNow;
     if (cover < 0.03) return 0;
-    const base = this.v('ceiling');
+    const base = this.cloudBase(x);
     const storm = this.preset.storm ? 1 : 0;
     const thick = 900 + cover * 2800 + storm * 5200;
     const top = base + thick;
@@ -229,7 +239,7 @@ export class Weather {
     const cell = fbm2(x / 2400 + 40, 8.5, 9, 2);
     const storm = this.stormCell(x);
     const inten = clamp(rate * (0.25 + 1.15 * cell) + storm * 0.7, 0, 1);
-    const top = this.v('ceiling') + 1400 + this.coverNow * 3200 + (this.preset.storm ? 6000 : 0);
+    const top = this.cloudBase(x) + 1400 + this.coverNow * 3200 + (this.preset.storm ? 6000 : 0);
     const vert = 1 - smoothstep(top - 1200, top, y);
     return clamp(inten * vert, 0, 1);
   }

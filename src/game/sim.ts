@@ -24,6 +24,21 @@ import type { FlightSummary } from './career';
 const G = 9.81;
 export const STEP = 1 / 120;
 
+// ---- oleo suspension (visual): rest compression per leg, hard bottoming stop,
+// and a stiff underdamped spring — touchdown thumps decay in ~2 s
+export const SUSP_STATIC_N = 0.1;
+export const SUSP_STATIC_M = 0.16;
+const SUSP_MAX = 0.55;
+const SUSP_K = 150;
+const SUSP_D = 4.4;
+
+/** one oleo bent towards its rest length: stiff, underdamped, bottoming */
+function oleoStep(c: number, v: number, target: number, dt: number): [number, number] {
+  const nv = v + ((target - c) * SUSP_K - v * SUSP_D) * dt;
+  const nc = clamp(c + nv * dt, 0, SUSP_MAX);
+  return [nc, nc <= 0 || nc >= SUSP_MAX ? 0 : nv];
+}
+
 export type SurfaceKind = 'deck' | 'runway' | 'grass' | 'sand' | 'rock' | 'snow' | 'water';
 export interface Surface {
   h: number;
@@ -73,6 +88,8 @@ export interface SimSettings {
   mission: Mission | null;
   /** free-play tuner: everything free, everything adjustable */
   sandbox?: SandboxTune | null;
+  /** phone/tablet: the coaching messages name the touch deck instead of the keys */
+  touch?: boolean;
 }
 
 interface Aero {
@@ -110,11 +127,18 @@ function liftCoef(alpha: number, CLa: number, a0: number, aS: number): { cl: num
   return { cl: clin + (flat - clin) * k, stall: k };
 }
 
+/** stick shaping: gentle centre for formation and flares, full throw for supermanoeuvres */
+function shapeStick(x: number): number {
+  return Math.sign(x) * Math.pow(Math.abs(x), 1.35);
+}
+
 export class Sim {
   spec: AircraftSpec;
   mode: WorldMode;
   tod: TimeOfDay;
   startAir: boolean;
+  /** touch deck in charge: hints point at the levers and chips, not at the keys */
+  touch = false;
   carrier: Carrier | null = null;
   time = 0;
   private acc = 0;
@@ -139,8 +163,19 @@ export class Sim {
   fuel = 0;
   gear = 1;
   gearCmd = 1;
+  /** oleo compression per leg (m) — visual suspension, see suspPose() */
+  suspN = SUSP_STATIC_N;
+  suspM = SUSP_STATIC_M;
+  private suspVN = 0;
+  private suspVM = 0;
+  /** last taxiway joint under the wheels — one index, both gears kick as one */
+  private lastJoint = 0;
+  private jointInit = false;
   flaps = 0;
   flapPos = 0;
+  /** spoilers: persistent lift-dump + drag, air and ground */
+  spoilerCmd = 0;
+  spoilerPos = 0;
   hook = false;
   hookPos = 0;
   airbrake = 0;
@@ -214,6 +249,15 @@ export class Sim {
   maxG = 0;
   maxMach = 0;
   bestLandingSink = 99;
+  // ---- SAR kit physics: the yellow survival pod dropped from the MPA
+  sarKit: { x: number; y: number; vx: number; vy: number; alive: boolean; landed: boolean; t: number; dist?: number } | null = null;
+  private sarDropCooldown = 0;
+  // ---- LSO (Landing Signal Officer) grading on the carrier
+  lsoGrade = '';
+  lsoDetail = '';
+  private lsoLastCall = 0;
+  private lsoHist: { g: number; speedErr: number; line: number; t: number }[] = [];
+  lsoWaveoff = false;
   /** one-shot thunder flag the audio engine reads */
   thunderPulse = 0;
 
@@ -226,6 +270,16 @@ export class Sim {
   stallWarn = 0;
   overspeed = false;
   pullUp = false;
+  /** GPWS mode 4: gear up, low, slow and descending — landing without wheels */
+  tooLowGear = false;
+  /** reactive windshear: inside a microburst outflow, low down */
+  windshear = false;
+  /** EGPWS caution: rising terrain ahead is inside the projected flight path */
+  terrainAhead = false;
+  /** distance (m) to the threatening terrain, for the HUD */
+  terrainAheadDist = 0;
+  /** height (m) of the threatening terrain */
+  terrainAheadH = 0;
   agl = 0;
   groundH = 0;
   rho = 1.225;
@@ -253,6 +307,7 @@ export class Sim {
     this.mode = s.mode;
     this.tod = s.tod;
     this.startAir = s.startAir;
+    this.touch = !!s.touch;
     this.weather = new Weather(s.weather, s.mode);
     if (s.sandbox) this.setSandbox(s.sandbox, true);
     this.air = this.weather.sample({
@@ -281,11 +336,18 @@ export class Sim {
       this.say(
         this.grounded
           ? this.mode === 'carrier'
-            ? t2(
-                'Press X (or hold →) for full throttle, then SPACE to launch from the catapult',
-                'Pulsa X (o mantén →) a tope y luego ESPACIO para lanzarte de la catapulta',
-              )
-            : t2('Hold → for throttle, pull ↑ at rotate speed', 'Mantén → para acelerar y tira ↑ a la velocidad de rotación')
+            ? this.touch
+              ? t2(
+                  'Push the THR lever to the top, then tap CAT to launch',
+                  'Sube la palanca ACEL a tope y toca CATAP para lanzarte',
+                )
+              : t2(
+                  'Press X (or hold →) for full throttle, then SPACE to launch from the catapult',
+                  'Pulsa X (o mantén →) a tope y luego ESPACIO para lanzarte de la catapulta',
+                )
+            : this.touch
+              ? t2('Push the THR lever, then pull the PITCH lever at rotate speed', 'Sube la palanca ACEL y tira de CABECEO a la velocidad de rotación')
+              : t2('Hold → for throttle, pull ↑ at rotate speed', 'Mantén → para acelerar y tira ↑ a la velocidad de rotación')
           : t2('You have the controls', 'Tienes el control'),
         'info',
         '',
@@ -312,11 +374,24 @@ export class Sim {
     if (this.msgs.length > 4) this.msgs.shift();
   }
 
+  /** true when x is over the maritime SAR sea patch (rendered as water) */
+  isSarSea(x: number): boolean {
+    const sar = this.mission?.mission.sar;
+    if (!sar) return false;
+    if (Math.abs(x - sar.targetX) >= 5600) return false;
+    // never flood a runway: the rescue is at sea, not on the airfield
+    const ap = airportAt(x, 420);
+    if (ap) return false;
+    return true;
+  }
+
   surfaceAt(x: number): Surface {
     if (this.carrier) {
       const s = x - this.carrier.x;
       if (s >= 0 && s <= CARRIER_LEN) return { h: DECK_H, kind: 'deck', vx: this.carrier.vx };
     }
+    // SAR sea patch: even over land, the datum area is rendered and behaves as water
+    if (this.isSarSea(x)) return { h: 0, kind: 'water', vx: 0 };
     const th = terrainHeight(x, this.mode);
     if (th <= 0) return { h: 0, kind: 'water', vx: 0 };
     let kind: SurfaceKind = 'grass';
@@ -332,6 +407,7 @@ export class Sim {
       const s = x - this.carrier.x;
       if (s >= 0 && s <= CARRIER_LEN) return 0;
     }
+    if (this.isSarSea(x)) return 0;
     return (terrainHeight(x + 1.5, this.mode) - terrainHeight(x - 1.5, this.mode)) / 3;
   }
 
@@ -359,8 +435,15 @@ export class Sim {
     this.fuel = s.fuelMax;
     this.gear = 1;
     this.gearCmd = 1;
+    this.suspN = SUSP_STATIC_N;
+    this.suspM = SUSP_STATIC_M;
+    this.suspVN = 0;
+    this.suspVM = 0;
+    this.jointInit = false;
     this.flaps = 0;
     this.flapPos = 0;
+    this.spoilerCmd = 0;
+    this.spoilerPos = 0;
     this.hook = false;
     this.hookPos = 0;
     this.airbrake = 0;
@@ -377,6 +460,12 @@ export class Sim {
     this.deckTouched = false;
     this.prevHookS = null;
     this.airTime = 0;
+    this.lsoGrade = '';
+    this.lsoDetail = '';
+    this.lsoHist = [];
+    this.lsoWaveoff = false;
+    this.sarKit = null;
+    this.sarDropCooldown = 0;
     this.engineOut = false;
     this.lowFuelSaid = false;
     this.autoThr = false;
@@ -384,6 +473,12 @@ export class Sim {
     this.particles = [];
     this.shake = 0;
     this.stallWarn = 0;
+    this.pullUp = false;
+    this.tooLowGear = false;
+    this.windshear = false;
+    this.terrainAhead = false;
+    this.terrainAheadDist = 0;
+    this.terrainAheadH = 0;
     this.lastGrade = '';
     this.offset = 0;
     this.rudder = 0;
@@ -527,7 +622,12 @@ export class Sim {
     this.hook = !this.hook;
     if (!this.hook && this.arrested) {
       this.arrested = false;
-      this.say('Hook raised — wire released', 'info', 'Taxi clear. Press R to return to the catapult', 3);
+      this.say(
+        'Hook raised — wire released',
+        'info',
+        this.touch ? t2('Taxi clear. Tap RESET to return to the catapult', 'Pista libre. Toca REINICIO para volver a la catapulta') : 'Taxi clear. Press R to return to the catapult',
+        3,
+      );
     } else this.say(this.hook ? 'Tailhook DOWN' : 'Tailhook UP', 'info', '', 1.6);
   }
 
@@ -545,7 +645,12 @@ export class Sim {
     if (this.grounded) return this.say('Autothrottle available in flight', 'info');
     this.autoThr = !this.autoThr;
     if (this.autoThr) this.atTarget = Math.round(this.ias / 2) * 2;
-    this.say(this.autoThr ? `Autothrottle ON — ${Math.round(this.atTarget * 1.944)} kt` : 'Autothrottle OFF', 'info', this.autoThr ? '← → adjust speed' : '', 2.2);
+    this.say(
+      this.autoThr ? `Autothrottle ON — ${Math.round(this.atTarget * 1.944)} kt` : 'Autothrottle OFF',
+      'info',
+      this.autoThr ? (this.touch ? t2('the lever adjusts speed', 'la palanca ajusta la velocidad') : '← → adjust speed') : '',
+      2.2,
+    );
   }
 
   trim(d: number): void {
@@ -602,23 +707,164 @@ export class Sim {
     this.say(t2('ALT HOLD', 'ALTITUD FIJADA'), 'good', t2(`${Math.round(this.agl)} m AGL`, `${Math.round(this.agl)} m AGL`), 2.5);
   }
 
-  /** Aerobatic smoke trail on/off. */
+  /** Spoilers up/down — persistent toggle, drag + lift dump in every regime. */
+  toggleSpoilers(): void {
+    this.spoilerCmd = this.spoilerCmd > 0.5 ? 0 : 1;
+    this.say(
+      this.spoilerCmd > 0.5 ? t2('SPOILERS UP', 'SPOILERS FUERA') : t2('SPOILERS DOWN', 'SPOILERS DENTRO'),
+      'info',
+      this.touch ? t2('the SPLR chip toggles them', 'el botón SPLR los mueve') : t2('C toggles the spoilers', 'C saca y mete los spoilers'),
+      2.5,
+    );
+  }
+
+  /** Aerobatic smoke trail on/off — display smoke is PC-21 equipment only. */
   toggleSmoke(): void {
+    if (!this.spec.displaySmoke) {
+      this.say(
+        t2('NO SMOKE EQUIPPED', 'SIN HUMO'),
+        'info',
+        t2('Only the PC-21 carries display smoke', 'Solo el PC-21 lleva humo de exhibición'),
+        2.5,
+      );
+      return;
+    }
     this.smokeOn = !this.smokeOn;
     this.say(
       this.smokeOn ? t2('SMOKE ON', 'HUMO ON') : t2('SMOKE OFF', 'HUMO OFF'),
       'info',
-      t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
+      this.touch ? t2('the SMOKE chip toggles it', 'el botón HUMO lo activa') : t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
       2.5,
     );
+  }
+
+  /** Drop the SAR survival kit (D key / HUD button). */
+  dropKit(): void {
+    if (!this.alive) return;
+    if (!this.mission || this.mission.mission.kind !== 'sar') {
+      this.say(t2('NO SAR CONTRACT', 'SIN CONTRATO SAR'), 'info', t2('Take a SAR contract to use the kit', 'Acepta un contrato SAR para usar el kit'), 2.5);
+      return;
+    }
+    if (!this.mission.sarSpotted) {
+      this.say(t2('FIND THE RAFT FIRST', 'PRIMERO LOCALIZA LA BALSA'), 'warn', t2('Overfly the raft below 320 m to spot it', 'Sobrevuela la balsa por debajo de 320 m'), 3);
+      return;
+    }
+    if (this.mission.sarDropDone) {
+      this.say(t2('KIT ALREADY DROPPED', 'KIT YA LANZADO'), 'info', t2('Return to base and land', 'Vuelve a la base y aterriza'), 2.5);
+      return;
+    }
+    if (this.sarKit && this.sarKit.alive && !this.sarKit.landed) {
+      this.say(t2('KIT IN THE AIR', 'KIT EN EL AIRE'), 'info', '', 1.5);
+      return;
+    }
+    if (this.sarDropCooldown > 0) return;
+    if (this.grounded) {
+      this.say(t2('DROP IN FLIGHT ONLY', 'SOLO EN VUELO'), 'warn', '', 2);
+      return;
+    }
+    // spawn just below the belly
+    const vx = this.worldVx;
+    this.sarKit = { x: this.x, y: this.y - 1.2, vx, vy: this.vy - 1.5, alive: true, landed: false, t: 0 };
+    this.sarDropCooldown = 1.2;
+    this.say(t2('KIT AWAY', '¡KIT FUERA!'), 'good', t2('Watch the splash', 'Vigila el amerizaje'), 2.2);
+    // tiny pod tumbling
+    for (let i = 0; i < 6; i++) this.addParticle('debris', this.x, this.y - 1, vx * 0.3 + (Math.random() - 0.5) * 4, this.vy * 0.5, 1.2, 0.4, 0, [240, 210, 60]);
+  }
+
+  private sarKitTick(dt: number): void {
+    this.sarDropCooldown = Math.max(0, this.sarDropCooldown - dt);
+    if (!this.sarKit || !this.sarKit.alive) return;
+    const k = this.sarKit;
+    k.t += dt;
+    if (!k.landed) {
+      // parachute-retarded fall: terminal ~7 m/s
+      k.vy += (-9.81 - 1.4 * k.vy) * dt;
+      k.vx *= 1 - 0.35 * dt;
+      k.x += k.vx * dt;
+      k.y += k.vy * dt;
+      const surf = this.surfaceAt(k.x);
+      const hitY = surf.h + 0.6;
+      if (k.y <= hitY) {
+        k.y = hitY;
+        k.landed = true;
+        // splash
+        for (let i = 0; i < 18; i++) this.addParticle('splash', k.x, hitY, (Math.random() - 0.5) * 18, 2 + Math.random() * 10, 1.1, 0.9, 1, [240, 240, 255]);
+        for (let i = 0; i < 10; i++) this.addParticle('smoke', k.x, hitY + 0.4, (Math.random() - 0.5) * 6, 1 + Math.random() * 3, 1.6, 0.7, 1.5, [240, 210, 60]);
+        const sar = this.mission?.mission.sar;
+        if (sar && this.mission) {
+          const dist = Math.abs(k.x - sar.targetX);
+          k.dist = dist;
+          this.mission.onDrop(dist);
+          this.sayEvent(this.mission.pending[this.mission.pending.length - 1]);
+          // keep kit visible on water for a while, then fade
+        } else {
+          k.alive = false;
+        }
+      } else if (k.t > 18) {
+        k.alive = false;
+      }
+    } else {
+      // bob on water
+      k.y = this.surfaceAt(k.x).h + 0.6 + Math.sin(this.time * 1.8) * 0.12;
+      if (k.t > 22) k.alive = false;
+    }
+  }
+
+  /** LSO calls during the carrier approach — glide, speed, lineup, waveoff */
+  private lsoTick(_dt: number): void {
+    if (!this.carrier || !this.alive || this.grounded || this.mission?.mission.kind !== 'carrierQual') return;
+    if (this.gear < 0.9 || this.hookPos < 0.9) return;
+    const err = this.olsError();
+    if (err === null) return;
+    const dist = (this.carrier.x + 82) - (this.x - this.spec.hookX * this.cEff());
+    if (dist < 200 || dist > 4300) return;
+    const now = this.time;
+    if (now - this.lsoLastCall < 2.2) return;
+    const speedErr = this.ias * 1.944 - this.spec.vApproach * 1.944;
+    const line = Math.abs(this.offset);
+    // keep a short history for the final grade
+    this.lsoHist.push({ g: err, speedErr, line, t: now });
+    if (this.lsoHist.length > 18) this.lsoHist.shift();
+    // waveoff logic: very low / very high / very lined up at short range
+    const waveLow = err < -1.4 && dist < 1100;
+    const waveHigh = err > 1.7 && dist < 900;
+    const waveLine = line > 12 && dist < 900;
+    if (waveLow || waveHigh || waveLine) {
+      this.lsoWaveoff = true;
+      this.lsoLastCall = now;
+      const reason = waveLow ? (this.touch ? t2('WAVEOFF — LOW!', '¡FRUSTRADA: BAJO!') : 'WAVEOFF, LOW!') : waveHigh ? 'WAVEOFF, HIGH!' : 'WAVEOFF, LINEUP!';
+      this.say(reason, 'bad', t2('Full power — go around', 'Motor a tope: frustrada'), 3);
+      return;
+    }
+    // routine calls
+    if (Math.abs(err) > 1.0) {
+      this.lsoLastCall = now;
+      this.say(err > 0 ? t2('YOU ARE HIGH', 'VAS ALTO') : t2('YOU ARE LOW', 'VAS BAJO'), 'warn', err > 0 ? t2('Ease down', 'Corrige abajo') : t2('Power!', '¡Motor!'), 2);
+      return;
+    }
+    if (Math.abs(speedErr) > 12) {
+      this.lsoLastCall = now;
+      this.say(speedErr > 0 ? t2('YOU ARE FAST', 'VAS RÁPIDO') : t2('YOU ARE SLOW', 'VAS LENTO'), 'warn', '', 2);
+      return;
+    }
+    if (line > 8) {
+      this.lsoLastCall = now;
+      this.say(line > 0 ? t2('LINEUP LEFT', 'ALINÉATE A LA DERECHA') : t2('LINEUP RIGHT', 'ALINÉATE A LA IZQUIERDA'), 'warn', '', 2);
+      return;
+    }
   }
 
   launch(): void {
     if (!this.alive) return;
     if (!this.carrier) return;
     if (this.trapped || (this.arrested && this.u - this.carrier.vx * this.hdg < 0.5)) return this.respawn();
-    if (!this.catHeld) return this.say('Not on the catapult — press R to reposition', 'info');
-    if (this.throttle < 0.85) return this.say('Set throttle to FULL before launch', 'warn', 'Hold → until the bar is full');
+    if (!this.catHeld) return this.say(this.touch ? t2('Not on the catapult — tap RESET', 'No estás en la catapulta: toca REINICIO') : 'Not on the catapult — press R to reposition', 'info');
+    if (this.throttle < 0.85)
+      return this.say(
+        'Set throttle to FULL before launch',
+        'warn',
+        this.touch ? t2('push the THR lever to the top', 'sube la palanca ACEL a tope') : 'Hold → until the bar is full',
+      );
     this.catHeld = false;
     this.catActive = true;
     this.parked = false;
@@ -647,6 +893,8 @@ export class Sim {
   private frameUpdate(dt: number): void {
     const s = this.spec;
     this.updateEnvironment(dt);
+    this.sarKitTick(dt);
+    this.lsoTick(dt);
     for (const m of this.msgs) m.t += dt;
     this.msgs = this.msgs.filter((m) => m.t < m.dur);
     this.shake = Math.max(0, this.shake - dt * 1.5);
@@ -655,27 +903,146 @@ export class Sim {
     this.groundH = sf.h;
     this.agl = this.y - (this.gear > 0.9 ? s.gearH : s.gearH * 0.4) - sf.h;
     this.maxAlt = Math.max(this.maxAlt, this.y);
+    // ---- oleo suspension (visual only): legs relax towards rest length, shifted
+    // forward under braking (nose dives, mains unload); touchdowns and joints
+    // kick the velocity in touchdown() and below
+    let targetN = SUSP_STATIC_N;
+    let targetM = SUSP_STATIC_M;
+    if (this.grounded && this.alive && this.gear > 0.5 && this.input.brake) {
+      const sp = Math.abs(this.worldVx);
+      if (sp > 1) {
+        const dive = Math.min(0.14, 0.02 + sp * 0.0022);
+        targetN += dive;
+        targetM -= dive * 0.6;
+      }
+    }
+    [this.suspN, this.suspVN] = oleoStep(this.suspN, this.suspVN, targetN, dt);
+    [this.suspM, this.suspVM] = oleoStep(this.suspM, this.suspVM, targetM, dt);
+    // fighters work their oleos over taxiway joints while rolling SLOWLY: both
+    // gears kick as one crossing each slab edge, and the kicks fade as lift
+    // unloads the gear — so slow taxi hops and fast rolls stay smooth
+    if (s.taxiBounce && this.alive) {
+      const JOINT = 9;
+      const j = Math.floor(this.x / JOINT);
+      if (!this.jointInit || !this.grounded || this.gear <= 0.5) {
+        this.lastJoint = j;
+        this.jointInit = true;
+      } else {
+        const sp = Math.abs(this.worldVx);
+        if (sp > 0.5) {
+          const vr = Math.max(20, s.vRotate);
+          const unload = clamp(1 - (sp / vr) * (sp / vr), 0, 1);
+          const kick = 1.8 * unload * unload;
+          if (kick > 0.01 && j !== this.lastJoint) {
+            const k = kick * (0.7 + 0.6 * hash(j * 3.13));
+            this.suspVN += k;
+            this.suspVM += k;
+          }
+        }
+        this.lastJoint = j;
+      }
+    }
     if (this.alive) {
       this.flightTime += dt;
       this.distance += Math.abs(this.worldVx) * dt;
-      // terrain proximity warning
+      // ---- EGPWS: TERRAIN AHEAD caution, escalating to PULL UP ----
+      // The old warning only fired while already descending into the ground.
+      // This one looks 20+ seconds down the flight path: if rising terrain
+      // ahead punches through the projected climb (or level cruise), the
+      // pilot gets an amber TERRAIN AHEAD with time to climb or turn away,
+      // and a red PULL UP once impact is seconds away.
       let warn = false;
+      let ahead = false;
+      let aheadDist = 0;
+      let aheadH = 0;
       if (!this.grounded) {
         const vxw = this.worldVx;
-        for (let t = 1.5; t <= 7; t += 1.5) {
-          const px = this.x + vxw * t;
-          const py = this.y + this.vy * t;
-          const g = Math.max(terrainHeight(px, this.mode), 0);
-          if (py < g + 25 && this.vy < -2) warn = true;
-        }
+        const gs = Math.max(Math.abs(vxw), 25);
+        // mid-reversal the nose sweeps both ways, so watch both directions
+        const dirs = this.turning ? [1, -1] : [Math.abs(vxw) > 8 ? Math.sign(vxw) : this.hdg];
+        // landing inhibit: once stabilised on final the runway environment
+        // ahead is expected — but terrain piercing the glidepath still
+        // escalates to PULL UP below, inhibited or not
         const landingCfg = this.gear > 0.9 && this.flapPos > 0.5;
-        if (landingCfg && this.agl < 400) warn = warn && this.vy < -8;
+        let established = false;
+        if (landingCfg && this.agl < 500 && this.mode === 'open') {
+          const g = this.glidepath();
+          if (g && g.dist < 7000 && Math.abs(g.dev) < 90) established = true;
+        }
+        const margin = this.terrainAhead ? 150 : 90; // hysteresis: no flicker
+        // on a stabilised final the red only shouts when the projected path
+        // truly goes into the hill — a normal 3° path skimming a knoll ahead
+        // of the threshold must not set it off
+        const escMargin = established ? 2 : 25;
+        const maxDist = Math.min(9000, Math.max(2500, gs * 22));
+        for (const dir of dirs) {
+          let found = false;
+          const escDist = Math.min(maxDist, gs * 7.5);
+          for (let dist = 400; dist <= maxDist; dist += 150) {
+            // past the red window the nearest caution breach decides
+            if (found && dist > escDist) break;
+            const px = this.x + dir * dist;
+            const terr = Math.max(terrainHeight(px, this.mode), 0);
+            // only rising ground is a threat: flat land below the flight
+            // path is what the sink-rate check underneath is for
+            if (terr < this.groundH + 60) continue;
+            const t = dist / gs;
+            const clearance = this.y + this.vy * t - terr;
+            if (!found && !established && clearance < margin) {
+              found = true;
+              if (!ahead || dist < aheadDist) {
+                ahead = true;
+                aheadDist = dist;
+                aheadH = terr;
+              }
+            }
+            // red escalation: the projected path pierces rising terrain
+            // within seconds — shout even on final
+            if (dist <= escDist && clearance < escMargin) warn = true;
+          }
+        }
+        // classic sink-rate warning: dropping fast onto the ground right now
+        if (!warn) {
+          for (let t = 1.5; t <= 7; t += 1.5) {
+            const px = this.x + vxw * t;
+            const py = this.y + this.vy * t;
+            const g = Math.max(terrainHeight(px, this.mode), 0);
+            if (py < g + 25 && this.vy < -2) warn = true;
+          }
+          if (landingCfg && this.agl < 400) warn = warn && this.vy < -8;
+        }
       }
       this.pullUp = warn;
+      this.terrainAhead = ahead;
+      // GPWS mode 4: wheels up, low, slow and coming down — the HUD and the
+      // "TOO LOW GEAR" voice share this one flag so they never disagree
+      this.tooLowGear = !s.fixedGear && !this.grounded && this.gearCmd < 0.5 && this.agl < 120 && this.ias < 1.5 * s.vs && this.vy < 0;
+      // reactive windshear: microburst outflow at low altitude
+      this.windshear = !this.grounded && !!this.air && this.air.micro > 0.4;
+      if (ahead) {
+        this.terrainAheadDist = aheadDist;
+        this.terrainAheadH = aheadH;
+      }
       this.refuelTick(dt);
     }
     this.updateParticles(dt);
     this.emitEffects(dt);
+  }
+
+  /**
+   * Suspension pose for the renderer: fuselage lift (m, +up), extra pitch
+   * (rad, +nose-up) and per-leg dynamic deflection (m, +compressed) solved so
+   * both wheels stay planted while the airframe rides the oleos. Parked it is
+   * all zeroes; touchdowns squash through the springs above, and taxiway joints
+   * kick them while fighters roll slowly on their gear.
+   */
+  suspPose(): { lift: number; dpitch: number; nose: number; main: number } {
+    const dN = this.suspN - SUSP_STATIC_N;
+    const dM = this.suspM - SUSP_STATIC_M;
+    const wb = this.spec.noseX - this.spec.mainX;
+    const dp = wb > 0.01 ? (dM - dN) / wb : 0;
+    const lift = -(dN + dM) / 2 - (dp * (this.spec.noseX + this.spec.mainX)) / 2;
+    return { lift, dpitch: dp, nose: dN, main: dM };
   }
 
   /**
@@ -845,7 +1212,8 @@ export class Sim {
     if (inp.turn && !this.turning) this.tryTurn(true);
 
     // autopilot altitude hold: fly the pitch to kill the height and sink errors
-    let pitchCmd = inp.pitch;
+    // manual stick only — altHold below replaces this outright when engaged
+    let pitchCmd = shapeStick(inp.pitch);
     if (this.altHold !== null) {
       if (this.grounded) this.altHold = null;
       else {
@@ -880,6 +1248,7 @@ export class Sim {
     this.hookPos += clamp((this.hook ? 1 : 0) - this.hookPos, -h, h);
     const ab = inp.brake && !this.grounded ? 1 : 0;
     this.airbrake += clamp(ab - this.airbrake, -2 * h, 2 * h);
+    this.spoilerPos += clamp(this.spoilerCmd - this.spoilerPos, -1.5 * h, 1.5 * h);
     // rudder: used to hold the centreline in a crosswind and to de-crab
     this.rudder += clamp((inp.rudder ?? 0) - this.rudder, -3 * h, 3 * h);
 
@@ -965,14 +1334,15 @@ export class Sim {
     const aStall = s.alphaStall * (1 - 0.16 * ice);
     const cla = s.CLa * (1 - 0.2 * ice);
     const lc = liftCoef(alpha, cla, a0, aStall);
-    let Cd = s.Cd0 + s.flapCd * this.flapPos + s.gearCd * this.gear + 0.045 * this.airbrake;
+    const cl = lc.cl * (1 - 0.35 * this.spoilerPos); // spoilers kill lift, air and ground
+    let Cd = s.Cd0 + s.flapCd * this.flapPos + s.gearCd * this.gear + 0.045 * this.airbrake + 0.085 * this.spoilerPos;
     Cd += 0.026 * ice * (1 - (s.deIce ?? 0) * 0.5) * 2.2 + ice * 0.012;
     if (s.kind === 'jet') {
-      Cd += 0.026 * smoothstep(0.88, 1.08, mach) + 0.012 * Math.exp(-Math.pow((mach - 1.05) / 0.12, 2));
+      Cd += (s.waveCd ?? 1) * (0.026 * smoothstep(0.88, 1.08, mach) + 0.012 * Math.exp(-Math.pow((mach - 1.05) / 0.12, 2)));
     } else if (mach > 0.65) Cd += 1.5 * Math.pow(mach - 0.65, 2);
-    Cd += s.k * lc.cl * lc.cl + 1.4 * lc.stall * Math.sin(alpha) * Math.sin(alpha) + 0.25 * Math.sin(alpha) * Math.sin(alpha);
+    Cd += s.k * cl * cl + 1.4 * lc.stall * Math.sin(alpha) * Math.sin(alpha) + 0.25 * Math.sin(alpha) * Math.sin(alpha);
 
-    const Lraw = q * s.S * lc.cl;
+    const Lraw = q * s.S * cl;
     const L = Lraw * cosB;
     const D = q * s.S * Cd;
 
@@ -995,7 +1365,7 @@ export class Sim {
 
     this.g = this.grounded ? 1 : Lraw / (m * G);
     this.stallWarn = alpha > 0.88 * aStall && alpha < 2 && !this.grounded ? 1 : 0;
-    this.overspeed = this.ias > s.vne || (s.kind === 'jet' && mach > 2.0);
+    this.overspeed = this.ias > s.vne || (s.kind === 'jet' && mach > (s.mmo ?? 2.0));
     if ((this.ias > s.vne * 1.28 || mach > 2.5) && !this.grounded) this.crash('Structural failure — overspeed', false);
 
     return { m, T, L, D, Fx, Fy, q, V, gamma, alpha };
@@ -1052,8 +1422,13 @@ export class Sim {
     aTrim = clamp(aTrim, -0.85 * s.alphaStall, 0.85 * s.alphaStall);
 
     const e = this.elev;
-    let aCmd = e >= 0 ? aTrim + e * (1.18 * s.alphaStall - aTrim) : aTrim + e * (aTrim + 0.55 * s.alphaStall);
-    const aMaxG = a0 + (s.gmax * W) / (qq * s.S) / s.CLa;
+    const aLim = s.alphaMax ?? 1.18 * s.alphaStall;
+    let aCmd = e >= 0 ? aTrim + e * (aLim - aTrim) : aTrim + e * (aTrim + 0.55 * s.alphaStall);
+    // fighters hold a minimum turn rate: the g-limiter opens up with speed so
+    // the jet still carves at Mach instead of flying a 10 km arc; the altitude
+    // autopilot keeps the stock limit its capture loop was tuned for
+    const gLim = this.altHold !== null ? s.gmax : Math.max(s.gmax, ((s.minTurnRate ?? 0) * A.V) / G);
+    const aMaxG = a0 + (gLim * W) / (qq * s.S) / s.CLa;
     const aMinG = a0 - (s.gmin * W) / (qq * s.S) / s.CLa;
     aCmd = clamp(aCmd, aMinG, aMaxG);
     if (A.alpha > 0.9 * s.alphaStall && A.alpha < 1.5) aCmd += (Math.random() - 0.5) * 0.06;
@@ -1080,7 +1455,8 @@ export class Sim {
   private structuralTick(h: number): void {
     const s = this.spec;
     if (this.grounded || !this.alive || this.god) return;
-    if (this.g > s.gmax * 1.04) this.damage += (this.g - s.gmax * 1.04) * 0.1 * h;
+    const gLim = Math.max(s.gmax, ((s.minTurnRate ?? 0) * this.tas) / G);
+    if (this.g > gLim * 1.04) this.damage += (this.g - gLim * 1.04) * 0.1 * h;
     if (this.ias > s.vne * 1.02) this.damage += ((this.ias - s.vne * 1.02) / s.vne) * 0.35 * h;
     if (this.air.turb > 0.9) this.damage += (this.air.turb - 0.9) * 0.012 * h;
     if (this.damage >= 1) {
@@ -1130,7 +1506,7 @@ export class Sim {
       if (surf.kind === 'grass') mu = 0.07;
       else if (surf.kind === 'sand' || surf.kind === 'snow') mu = 0.12;
       else if (surf.kind === 'rock') mu = 0.2;
-      if (braking) mu = 0.55 * (s.brakeBonus ?? 1);
+      if (braking) mu = 0.7 * (s.brakePower ?? 1) * (s.brakeBonus ?? 1);
     }
     const hydroplaning = wet > 0.45 && Math.abs(uRel) > 40 ? 0.32 : 1;
     mu *= (1 - 0.42 * wet) * hydroplaning;
@@ -1306,6 +1682,11 @@ export class Sim {
     this.sinkRate = closing;
     this.autoThr = false;
     this.shake = Math.min(1, 0.25 + closing * 0.1);
+    // oleos soak the impact together, both gears equally (belly slides don't bounce)
+    if (!belly && this.gear > 0.5) {
+      this.suspVM += closing * 1.5;
+      this.suspVN += closing * 1.5;
+    }
     const c = this.hdg;
     const wxo = this.x + s.mainX * c;
     for (let i = 0; i < 14; i++) {
@@ -1423,6 +1804,9 @@ export class Sim {
       assist: this.assist,
       events: Array.from(this.events),
       notes: this.notes,
+      sarDropDist: (run as any)?.sarDropDist ?? null,
+      lsoGrade: (this as any).lsoGrade || null,
+      missionKind: m ? m.kind : null,
     };
   }
 
@@ -1467,24 +1851,62 @@ export class Sim {
     this.trapped = true;
     this.traps++;
     const w = this.wire;
-    let pts = w === 2 ? 4 : w === 1 || w === 3 ? 3 : 2;
-    if (this.sinkRate > 5) pts -= 1;
-    if (this.sinkRate < 2.2 && w === 2) pts = 5;
+    // --- LSO grading: wire + glide + speed + lineup + sink
+    // OLS error at trap (degrees), speed error (kts), lineup (m), sink (m/s)
+    const glideErr = Math.abs(this.lsoHist.length ? this.lsoHist[this.lsoHist.length - 1].g : (this.olsError() ?? 0));
+    const avg = this.lsoHist.length ? this.lsoHist.reduce((a, h) => ({ g: a.g + h.g, speedErr: a.speedErr + h.speedErr, line: a.line + h.line }), { g: 0, speedErr: 0, line: 0 }) : null;
+    const avgGlide = avg ? Math.abs(avg.g / this.lsoHist.length) : glideErr;
+    const avgSpeedErr = avg ? avg.speedErr / this.lsoHist.length : (this.ias * 1.944 - this.spec.vApproach * 1.944);
+    const avgLine = avg ? avg.line / this.lsoHist.length : Math.abs(this.offset);
+    const sink = this.sinkRate;
+    // wire centrality: 3-wire (index 2) is ideal
+    const wirePts = w === 2 ? 2 : w === 1 || w === 3 ? 1 : 0;
+    // approach quality 0..6
+    let app = 0;
+    app += avgGlide < 0.55 ? 2 : avgGlide < 0.95 ? 1 : 0;
+    app += Math.abs(avgSpeedErr) < 7 ? 2 : Math.abs(avgSpeedErr) < 13 ? 1 : 0;
+    app += avgLine < 4 ? 2 : avgLine < 7.5 ? 1 : 0;
+    if (sink > 6) app -= 2;
+    else if (sink > 4.5) app -= 1;
+    else if (sink < 2.6) app += 1;
+    if (this.lsoWaveoff) app -= 2;
+    const total = wirePts * 2 + app; // -4..10
     let grade = 'NO GRADE';
     let kind: Msg['kind'] = 'warn';
-    if (pts >= 5) {
+    let detail = `${Math.round(avgGlide*10)/10}° glideslope · ${Math.round(avgSpeedErr)} kt ${avgSpeedErr>0?'fast':'slow'} · ${avgLine.toFixed(1)} m lineup · ${sink.toFixed(1)} m/s`;
+    if (this.lsoWaveoff) {
+      grade = 'WAVEOFF';
+      kind = 'bad';
+      detail = t2('Unsafe approach', 'Aproximación insegura') + ' · ' + detail;
+    } else if (total >= 8 && w === 2 && avgGlide < 0.7 && Math.abs(avgSpeedErr) < 9 && avgLine < 5 && sink < 4) {
       grade = 'PERFECT — OK 3-WIRE';
       kind = 'good';
-    } else if (pts === 4) {
+    } else if (total >= 6 && w === 2) {
       grade = 'OK — 3-WIRE';
       kind = 'good';
-    } else if (pts === 3) {
+    } else if (total >= 5) {
       grade = '(OK)';
       kind = 'good';
-    } else if (pts === 2) {
+    } else if (total >= 3) {
       grade = 'FAIR';
       kind = 'info';
+    } else if (total >= 1) {
+      grade = 'NO GRADE';
+      kind = 'warn';
+    } else {
+      grade = 'CUT PASS';
+      kind = 'warn';
     }
+    this.lsoGrade = grade;
+    this.lsoDetail = detail;
+    // keep classic pts for scoring compatibility ( map grade to pts)
+    let pts = 2;
+    if (grade.includes('PERFECT')) pts = 5;
+    else if (grade === 'OK — 3-WIRE') pts = 4;
+    else if (grade === '(OK)') pts = 3;
+    else if (grade === 'FAIR') pts = 2;
+    else if (grade === 'NO GRADE') pts = 1;
+    else pts = 0;
     this.lastGrade = grade;
     const mult = this.comboMult();
     const score = Math.round(Math.max(0, pts) * 150 * mult);
@@ -1492,7 +1914,7 @@ export class Sim {
     this.combo += 1;
     this.comboT = 0;
     if (pts >= 5) this.events.add('perfect_trap');
-    const note: string[] = [];
+    const note: string[] = [detail];
     if (this.weather.wetness > 0.5) {
       note.push(t2('wet deck', 'cubierta mojada'));
       this.events.add('wet_trap');
@@ -1505,7 +1927,9 @@ export class Sim {
     this.say(
       t2(`TRAP! Wire #${w + 1}`, `¡ENGANCHADO! Cable nº${w + 1}`),
       kind,
-      `${grade} · ${this.sinkRate.toFixed(1)} m/s${note.length ? ` · ${note.join(' · ')}` : ''} · +${score} · ${t2('SPACE to relaunch', 'ESPACIO para relanzar')}`,
+      `${grade} · ${this.sinkRate.toFixed(1)} m/s${note.length ? ` · ${note.join(' · ')}` : ''} · +${score} · ${
+        this.touch ? t2('CAT to relaunch', 'CATAP para relanzar') : t2('SPACE to relaunch', 'ESPACIO para relanzar')
+      }`,
       8,
     );
   }
@@ -1661,10 +2085,9 @@ export class Sim {
       if (!this.grounded && this.g > 4.2 && this.tas > 90) {
         this.addParticle('trail', this.x - c * 1.5, this.y - 0.2, 0, 0, 1.6, 0.35, 0.8, [255, 255, 255]);
       }
-      // aerobatic smoke: a colour trail from the tail. Aircraft with a display
-      // palette (PC-21: red/yellow) alternate bands of their colours, the rest
-      // cycle through the rainbow.
-      if (this.smokeOn) {
+      // aerobatic smoke: a colour trail from the tail. Only aircraft with
+      // display smoke (PC-21: red/yellow bands) can switch it on — see toggleSmoke.
+      if (this.smokeOn && s.displaySmoke) {
         this.smokeT += 0.03;
         let col: [number, number, number];
         if (s.smokeColors && s.smokeColors.length > 0) {

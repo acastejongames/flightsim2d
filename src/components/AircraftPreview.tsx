@@ -42,6 +42,8 @@ export default function AircraftPreview({
       night: false,
       light: [1, 1, 1],
       crashed: false,
+      suspNose: 0,
+      suspMain: 0,
     });
     ctx.restore();
   }, [spec, width, height]);

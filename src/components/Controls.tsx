@@ -25,12 +25,26 @@ const ROWS: [string, string, string][] = [
   ['P / ESC', 'Pause menu', 'Menú de pausa'],
 ];
 
-export default function Controls({ compact = false }: { compact?: boolean }) {
+/** The phone equivalent: two levers and a pad of chips. */
+const TOUCH_ROWS: [string, string, string][] = [
+  ['THR', 'Left lever: slide up or down to set the throttle. Absolute — it stays where you leave it.', 'Palanca izquierda: desliza arriba o abajo para dar gas. Es absoluta: se queda donde la dejas.'],
+  ['PITCH', 'Right lever: the nose follows your thumb and springs back to neutral when you let go.', 'Palanca derecha: el morro sigue al pulgar y vuelve solo al centro al soltar.'],
+  ['TAP', 'Gear, flaps, hook, 180° turn, AP, time ×, smoke, respawn — tap to toggle.', 'Tren, flaps, gancho, giro 180°, AP, tiempo ×, humo, reaparecer: toca para cambiar.'],
+  ['HOLD', 'Brake and rudder chips: keep the thumb pressed while you need them.', 'Frenos y timón: mantén el pulgar pulsado mientras los necesites.'],
+  ['PINCH', 'Pinch with two fingers anywhere on the sky to zoom in / out.', 'Pellizca con dos dedos en cualquier parte del cielo para acercar o alejar.'],
+];
+
+export default function Controls({ compact = false, touch = false }: { compact?: boolean; touch?: boolean }) {
+  const rows = touch ? TOUCH_ROWS : ROWS;
   return (
     <div className={`grid gap-x-6 gap-y-1.5 ${compact ? 'text-xs' : 'text-sm'} sm:grid-cols-1`}>
-      {ROWS.map(([k, en, es]) => (
-        <div key={k} className="flex items-baseline gap-3">
-          <span className="w-40 shrink-0 bg-white/10 px-2 py-0.5 text-center font-mono text-[11px] font-semibold text-sky-100 ring-1 ring-white/10">
+      {rows.map(([k, en, es]) => (
+        <div key={k + en} className="flex items-baseline gap-3">
+          <span
+            className={`shrink-0 bg-white/10 px-2 py-0.5 text-center font-mono text-[11px] font-semibold text-sky-100 ring-1 ring-white/10 ${
+              touch ? 'w-16' : 'w-40'
+            }`}
+          >
             {k}
           </span>
           <span className="text-slate-300">{t2(en, es)}</span>

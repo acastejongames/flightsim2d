@@ -11,6 +11,7 @@ import { SANDBOX_DEFAULT, clampTune as clampTuneForTest } from './game/sandbox';
 import { DECOR } from './game/decor';
 import { getAirport } from './game/world';
 import { AIRCRAFT } from './game/aircraft';
+import { isHandheld, setUiMode, uiModeFromSearch, wantsTouchUi } from './game/ui';
 
 const input: Input = { pitch: 0, thr: 1, brake: false, rudder: 0 };
 let failures = 0;
@@ -461,6 +462,41 @@ console.log('\n== Scenery sprites & turn modifier ==');
     `x0.6 ${reversals['0.6'].toFixed(2)} s · x1 ${reversals['1'].toFixed(2)} s · x2 ${reversals['2'].toFixed(2)} s`,
   );
   check('turn modifier stays in range', reversals['0.6'] < 4.2 && reversals['2'] > 0.5, 'no runaway');
+}
+
+// ---------------------------------------------------------------- GUI detection
+console.log('\n== Automatic GUI selection ==');
+{
+  // stand a fake browser up: a phone reports coarse + no hover, a PC the opposite
+  const g = globalThis as any;
+  const original = g.window;
+  const fake = (coarse: boolean, hover: boolean, search = '') => {
+    g.window = {
+      location: { search },
+      matchMedia: (q: string) => ({ matches: q.includes('pointer') ? coarse : hover ? false : true, addEventListener() {}, removeEventListener() {} }),
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    };
+  };
+  try {
+    setUiMode('auto');
+    fake(true, false); // an actual phone / tablet
+    check('handheld detected', isHandheld() && wantsTouchUi(), 'coarse pointer, no hover');
+    fake(false, true); // a desktop with a mouse
+    check('desktop detected', !isHandheld() && !wantsTouchUi(), 'fine pointer, hover');
+    // a narrow window is not a phone: a shrunken desktop keeps its own GUI
+    fake(false, true);
+    check('narrow desktop keeps the keyboard GUI', !wantsTouchUi(), 'width does not decide');
+    // the URL override is read once, when the game boots
+    check('?ui= parses', uiModeFromSearch('?ui=touch') === 'touch' && uiModeFromSearch('?ui=desktop') === 'desktop' && uiModeFromSearch('?ui=nope') === null, 'touch | desktop | auto');
+    setUiMode('touch');
+    check('pause-menu switch forces the touch deck', wantsTouchUi(), 'runtime override');
+    setUiMode('desktop');
+    check('pause-menu switch forces the keyboard GUI', !wantsTouchUi(), 'runtime override');
+  } finally {
+    setUiMode('auto');
+    if (original === undefined) delete g.window;
+    else g.window = original;
+  }
 }
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

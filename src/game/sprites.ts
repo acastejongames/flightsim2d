@@ -1,4 +1,4 @@
-import type { AircraftSpec } from './aircraft';
+import type { AircraftSpec, SpriteDef } from './aircraft';
 
 export interface Pose {
   gear: number;
@@ -150,18 +150,66 @@ function spriteAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: Pose,
     gearLeg(ctx, sp.main, P.gear, col);
   }
 
-  // anti-collision beacon + tail navigation light
-  const blink = Math.sin(P.time * 6) > 0.2;
-  ctx.fillStyle = blink ? col(255, 70, 60) : col(90, 30, 30);
-  ctx.beginPath();
-  ctx.arc(sp.xmax - 0.45, sp.ymax - 0.35, 0.09, 0, Math.PI * 2);
-  ctx.fill();
-  if (P.night) {
-    ctx.fillStyle = col(255, 255, 255);
+  lights(ctx, sp, P);
+}
+
+/**
+ * External lights, in the metre frame of the artwork:
+ *
+ *   nav    steady, left wingtip red (the wing you see in a side view)
+ *   tail   steady white on the tail cone
+ *   strobe white double-flash, wingtip and tail
+ *   beacon red double-pulse on the spine — the only one lit in daylight too
+ *   rwy    landing/taxi light at the nose gear, bright at night
+ */
+function lights(ctx: CanvasRenderingContext2D, sp: SpriteDef, P: Pose): void {
+  const L = sp.lights;
+  if (!L) return;
+  const t = P.time;
+  const night = P.night;
+  const pulse = (period: number, a: number, b: number) => {
+    const p = t % period;
+    return p < a || (p >= b && p < b + a);
+  };
+  const strobeOn = pulse(1.15, 0.045, 0.16);
+  const beaconOn = pulse(1.4, 0.08, 0.26);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const bulb = (x: number, y: number, r: number, rgb: string, a: number, glow: number) => {
+    if (a <= 0.01) return;
+    ctx.globalAlpha = a;
+    if (glow > 0) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, glow);
+      g.addColorStop(0, `rgba(${rgb},${0.5 * a})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, glow, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = `rgba(${rgb},${a})`;
     ctx.beginPath();
-    ctx.arc(sp.xmin + 0.12, sp.ymin + 0.3, 0.07, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+  };
+
+  // navigation: red wingtip (port) and white tail, steady — faint by day
+  const navA = night ? 1 : 0.45;
+  bulb(L.nav.x, L.nav.y, 0.1, '255,58,48', navA, night ? 0.45 : 0.18);
+  bulb(L.tail.x, L.tail.y, 0.09, '255,255,255', navA * 0.95, night ? 0.4 : 0.16);
+  // strobes: white, sharp double flash, day and night
+  if (strobeOn) {
+    bulb(L.nav.x, L.nav.y, 0.15, '255,255,255', 0.95, 0.9);
+    bulb(L.tail.x, L.tail.y, 0.13, '255,255,255', 0.9, 0.8);
   }
+  // anti-collision beacon on the spine
+  if (beaconOn) bulb(L.beacon.x, L.beacon.y, 0.13, '255,40,32', 0.95, 0.7);
+  else bulb(L.beacon.x, L.beacon.y, 0.09, '150,20,18', night ? 0.5 : 0.3, 0);
+  // runway / landing light at the nose: taxi glow by day, landing light at night
+  bulb(L.rwy.x, L.rwy.y, 0.12, '255,246,214', night ? 1 : 0.3, night ? 1.5 : 0.35);
+  ctx.restore();
 }
 
 export function drawAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: Pose): void {

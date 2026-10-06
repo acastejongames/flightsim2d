@@ -199,6 +199,11 @@ const DICT: Record<string, Entry> = {
   addXp: { en: '+5.000 XP', es: '+5.000 XP' },
   unlockAll: { en: 'Unlock everything', es: 'Desbloquear todo' },
   confirmReset: { en: 'Tap again to erase everything', es: 'Toca otra vez para borrar todo' },
+  // --- which GUI is in charge
+  interface: { en: 'Interface', es: 'Interfaz' },
+  uiAuto: { en: 'Auto', es: 'Auto' },
+  uiTouch: { en: 'Touch', es: 'Táctil' },
+  uiKeys: { en: 'Keyboard', es: 'Teclado' },
 };
 
 export function t(key: keyof typeof DICT | string): string {

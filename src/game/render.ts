@@ -4,7 +4,7 @@ import { CARRIER_LEN, CAT_END, CAT_START, DECK_H, TODS, WIRES, airportAt, airpor
 import type { DecorKey } from './decor';
 import { DECOR, decorSprite, drawDecorSprite, preloadDecor } from './decor';
 import type { Airport, TimeOfDay, ToD, WorldMode } from './world';
-import { drawAircraft } from './sprites';
+import { drawAircraft, drawEjectSeat, drawParachute } from './sprites';
 import { drawHUD } from './hud';
 import type { HudExtra } from './hud';
 
@@ -33,14 +33,25 @@ const TERRAIN_STOPS: [number, number[]][] = [
   [1900, [232, 236, 244]],
   [1500, [172, 172, 178]],
   [1000, [124, 116, 106]],
-  [600, [88, 102, 72]],
-  [250, [62, 100, 52]],
+  [600, [106, 104, 70]],
+  [250, [66, 100, 54]],
   [60, [88, 130, 62]],
   [4, [142, 158, 90]],
   [0, [208, 192, 144]],
   [-40, [150, 136, 100]],
   [-300, [60, 56, 52]],
 ];
+
+/**
+ * Zoom factor for the viewport size (CSS px of height). A bigger screen shows
+ * more world at the same px/m scale, which shrinks the aircraft visually — so
+ * the zoom scales linearly with height: phones (~720p and below) stay exactly
+ * as before, 1080p gets ×1.5 and 1440p ×2, capped at ×2 for 4K and beyond so
+ * the camera never closes in so far that you lose situational awareness.
+ */
+export function screenZoomFor(cssHeight: number): number {
+  return clamp(cssHeight / 720, 1, 2);
+}
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -221,11 +232,20 @@ export class Renderer {
   // ---------------------------------------------------------------- camera
   private updateCamera(sim: Sim, dt: number): void {
     const cam = this.cam;
-    const spd = sim.tas;
+    // when the pilot has ejected, the camera minds the chute, not the empty airframe
+    const ej: any = (sim as any).ejectState;
+    const hasEjected = (sim as any).ejected && ej;
+    const followX = hasEjected ? ej.x : sim.x;
+    const followY = hasEjected ? ej.y : sim.y;
+    const followVx = hasEjected ? ej.vx : sim.worldVx;
+    const followVy = hasEjected ? ej.vy : sim.vy;
+    const spd = hasEjected ? Math.hypot(followVx, followVy) : sim.tas;
     // Zoom follows the aircraft: fast jets pull the camera back, but the scale
     // never collapses so far that the airframe disappears. `userZoom` (+/− or the
-    // wheel) multiplies everything, including the size of the aircraft itself.
-    const target = clamp(4.2 / (1 + Math.pow(spd / 110, 1.05)), 1.7, 4.2) * this.userZoom;
+    // wheel) multiplies everything, including the size of the aircraft itself —
+    // and so does the screen factor, so a 1440p monitor gets the same apparent
+    // size as a phone instead of a tiny aircraft in a huge world.
+    const target = clamp(4.2 / (1 + Math.pow(spd / 110, 1.05)), 1.7, 4.2) * screenZoomFor(this.H) * this.userZoom;
     if (!this.initCam) {
       cam.zoom = target;
       this.initCam = true;
@@ -233,13 +253,14 @@ export class Renderer {
     cam.zoom += (target - cam.zoom) * (1 - Math.exp(-dt * 1.6));
     const vw = this.W / cam.zoom;
     const vh = this.H / cam.zoom;
-    const vxw = sim.alive ? sim.worldVx : 0;
+    const alive = hasEjected ? !ej.landed : sim.alive;
+    const vxw = alive ? followVx : 0;
     const tl = clamp(vxw * 0.55, -0.2 * vw, 0.2 * vw);
     cam.leadX += (tl - cam.leadX) * (1 - Math.exp(-dt * 2.4));
-    const tly = clamp(sim.vy * 0.35, -0.14 * vh, 0.14 * vh);
+    const tly = clamp(followVy * 0.35, -0.14 * vh, 0.14 * vh);
     cam.leadY += (tly - cam.leadY) * (1 - Math.exp(-dt * 2.4));
-    cam.x = sim.x + cam.leadX;
-    cam.y = sim.y + cam.leadY + 0.03 * vh;
+    cam.x = followX + cam.leadX;
+    cam.y = followY + cam.leadY + 0.03 * vh;
   }
 
   // ---------------------------------------------------------------- main frame
@@ -247,6 +268,7 @@ export class Renderer {
     const ctx = this.ctx;
     this.fps += (1 / Math.max(dt, 0.001) - this.fps) * 0.05;
     extra.fps = this.fps;
+    extra.zoom = this.userZoom;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.updateCamera(sim, dt);
     this.updateMood(sim);
@@ -262,10 +284,12 @@ export class Renderer {
     this.drawWorldFeatures(sim);
     if (sim.carrier) this.drawCarrier(sim);
     this.drawGates(sim);
+    this.drawSar(sim);
     this.drawWindStreaks(sim);
     this.drawCloudLayer(sim, 'back');
     this.drawParticles(sim, false);
     this.drawPlane(sim);
+    this.drawEject(sim);
     this.drawParticles(sim, true);
     this.drawCloudLayer(sim, 'front');
     this.drawPrecipitation(sim);
@@ -461,9 +485,11 @@ export class Renderer {
     if (this.hbuf.length < n) this.hbuf = new Float32Array(n + 64);
     const hb = this.hbuf;
     let maxH = -1e9;
+    const sarSea = !!(sim.mission && sim.mission.mission.sar);
     for (let i = 0; i < n; i++) {
       const wx = cam.x + (i * step - W / 2) / z;
-      const h = terrainHeight(wx, sim.mode);
+      let h = terrainHeight(wx, sim.mode);
+      if (sarSea && sim.isSarSea(wx)) h = -2;
       hb[i] = h;
       if (h > maxH) maxH = h;
     }
@@ -1418,6 +1444,166 @@ export class Renderer {
     }
   }
 
+  // ---------------------------------------------------------------- SAR mission: datum, raft and the dropped kit
+  private drawSar(sim: Sim): void {
+    const sar = sim.mission?.mission.sar;
+    const run = sim.mission;
+    if (!sar || !run) return;
+    const { ctx, cam } = this;
+    const z = cam.zoom;
+    const W = this.W;
+    // sea patch already handled in terrain; now datum + raft
+    const datumPx = this.sx(sar.datumX);
+    const datumPy = this.sy(1);
+    const radPx = sar.searchRadius * z;
+    // datum uncertainty circle: dashed translucent
+    if (datumPx + radPx > -40 && datumPx - radPx < W + 40) {
+      ctx.save();
+      ctx.strokeStyle = run.sarSpotted ? 'rgba(95,224,255,0.22)' : 'rgba(95,224,255,0.55)';
+      ctx.lineWidth = run.sarSpotted ? 1.2 : 1.6;
+      ctx.setLineDash(run.sarSpotted ? [12, 14] : [10, 10]);
+      ctx.beginPath();
+      ctx.arc(datumPx, datumPy, radPx, 0, Math.PI * 2);
+      ctx.stroke();
+      // inner fill very faint
+      ctx.fillStyle = run.sarSpotted ? 'rgba(95,224,255,0.04)' : 'rgba(95,224,255,0.09)';
+      ctx.fill();
+      // cross at datum centre
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(95,224,255,0.75)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(datumPx - 12, datumPy); ctx.lineTo(datumPx + 12, datumPy);
+      ctx.moveTo(datumPx, datumPy - 12); ctx.lineTo(datumPx, datumPy + 12);
+      ctx.stroke();
+      // label
+      ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
+      ctx.fillStyle = 'rgba(95,224,255,0.95)';
+      ctx.textAlign = 'center';
+      ctx.fillText('DATUM', datumPx, datumPy - radPx - 10);
+      ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText(`${(sar.searchRadius/1000).toFixed(1)} km`, datumPx, datumPy + radPx + 16);
+      ctx.restore();
+    }
+    // raft — only visible after spotted (or close) and before it sinks? Show always faintly before?
+    const raftPx = this.sx(sar.targetX);
+    const showRaft = run.sarSpotted || Math.abs(sim.x - sar.targetX) < 1900;
+    if (raftPx > -80 && raftPx < W + 80) {
+      const raftY = this.sy(0.8);
+      // hull on water
+      const hullW = Math.max(10, 18 * z);
+      const hullH = Math.max(4, 6 * z);
+      if (showRaft) {
+        // boat shape
+        ctx.save();
+        // search radar ping when not spotted: blinking dot on radar, faint here
+        if (!run.sarSpotted) {
+          const pulse = 0.5 + 0.5 * Math.sin(sim.time * 3);
+          ctx.globalAlpha = 0.18 + pulse * 0.22;
+        }
+        // hull orange
+        ctx.fillStyle = this.lit ? this.lit([236, 130, 40]) : 'rgba(236,130,40,1)';
+        // try lit if exists
+        const col = [236, 94, 20];
+        // use renderer lit if available; fallback
+        let fill = 'rgba(236,94,20,1)';
+        try { fill = (this as any).lit(col); } catch {}
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        // simple boat silhouette
+        ctx.moveTo(raftPx - hullW/2, raftY);
+        ctx.lineTo(raftPx - hullW/2 + 4*z, raftY - hullH);
+        ctx.lineTo(raftPx + hullW/2 - 3*z, raftY - hullH);
+        ctx.lineTo(raftPx + hullW/2, raftY);
+        ctx.closePath();
+        ctx.fill();
+        // canopy / people faint
+        ctx.fillStyle = 'rgba(30,30,40,0.9)';
+        ctx.fillRect(raftPx - hullW*0.18, raftY - hullH - 3*z, hullW*0.36, 3*z);
+        if (run.sarSpotted) {
+          // spotted blink beacon
+          const on = Math.floor(sim.time * 1.6) % 2 === 0;
+          (this as any).glowDot?.(raftPx, raftY - hullH - 5*z, 7*z, on ? [255,80,60] : [255,200,80], on ? 0.9 : 0.45);
+        }
+        ctx.restore();
+        // label when spotted
+        if (run.sarSpotted) {
+          ctx.font = '700 10px ui-monospace, Menlo, Consolas, monospace';
+          ctx.fillStyle = 'rgba(255,210,60,0.95)';
+          ctx.textAlign = 'center';
+          ctx.fillText('RAFT', raftPx, raftY - hullH - 18);
+          // distance to raft from aircraft
+          const d = Math.abs(sim.x - sar.targetX);
+          if (d < 3500) {
+            ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.82)';
+            ctx.fillText(`${(d/1000).toFixed(1)} km`, raftPx, raftY + 14);
+          }
+        }
+      } else {
+        // hidden — tiny radar blip only on weather radar, nothing here
+      }
+    }
+    // kit in the air / on water
+    const kit = sim.sarKit;
+    if (kit && kit.alive) {
+      const kpx = this.sx(kit.x);
+      const kpy = this.sy(kit.y);
+      if (kpx > -40 && kpx < W + 40 && kpy > -80 && kpy < this.H + 80) {
+        ctx.save();
+        // parachute if still falling
+        if (!kit.landed) {
+          ctx.fillStyle = 'rgba(255,220,40,0.95)';
+          ctx.beginPath();
+          ctx.arc(kpx, kpy - 8*z, Math.max(5, 9*z), Math.PI, 0);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(40,40,40,0.8)';
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(kpx - 9*z, kpy - 4*z); ctx.lineTo(kpx + 2, kpy);
+          ctx.moveTo(kpx + 9*z, kpy - 4*z); ctx.lineTo(kpx + 2, kpy);
+          ctx.stroke();
+        }
+        // pod
+        ctx.fillStyle = (this as any).lit ? (this as any).lit([240,210,60]) : 'rgba(240,210,60,1)';
+        ctx.fillRect(kpx - 4*z, kpy - 3*z, 8*z, 5*z);
+        ctx.fillStyle = 'rgba(30,30,30,0.85)';
+        ctx.font = `700 ${Math.max(6, 7*z)}px ui-monospace, Menlo, Consolas, monospace`;
+        ctx.textAlign = 'center';
+        if (z > 0.9) ctx.fillText('KIT', kpx, kpy - 12*z);
+        ctx.restore();
+        // drop trail
+        if (!kit.landed) {
+          ctx.strokeStyle = 'rgba(255,240,160,0.45)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3,4]);
+          ctx.beginPath();
+          ctx.moveTo(this.sx(sim.x), this.sy(sim.y));
+          ctx.lineTo(kpx, kpy);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else if (kit.dist !== undefined) {
+          // line to raft with dist
+          const rpx = this.sx(sar.targetX);
+          const rpy = this.sy(0.8);
+          ctx.strokeStyle = kit.dist! < 60 ? 'rgba(125,255,166,0.9)' : kit.dist! < 120 ? 'rgba(255,210,80,0.9)' : 'rgba(255,90,80,0.9)';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4,6]);
+          ctx.beginPath();
+          ctx.moveTo(kpx, this.sy(0.8));
+          ctx.lineTo(rpx, rpy);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
+          ctx.fillStyle = ctx.strokeStyle as string;
+          ctx.textAlign = 'center';
+          ctx.fillText(`${kit.dist!.toFixed(0)} m`, (kpx + rpx)/2, this.sy(0.8) - 14);
+        }
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- wind & precipitation
   private drawWindStreaks(sim: Sim): void {
     const amt = clamp(this.mood.precip > 0.3 ? sim.wind.speed / 18 : sim.wind.speed / 12, 0, 1.3);
@@ -1573,13 +1759,24 @@ export class Renderer {
       ctx.closePath();
       ctx.fill();
     }
+    // oleos: the airframe rides up/down on the gear while both wheels stay
+    // planted — touchdown squat on every aircraft, rolling hop on fighters
+    const so = sim.suspPose();
     ctx.save();
-    ctx.translate(px, py);
+    ctx.translate(px, py - so.lift * z);
     ctx.scale(sxScale, 1);
-    ctx.rotate(-sim.p);
+    ctx.rotate(-(sim.p + so.dpitch));
     if (sim.turning && sim.turnKind === 'air') ctx.rotate(0);
     ctx.scale(z, -z);
-    const dark = sim.alive ? 1 : 0.35;
+    // gentle ditch: aircraft slowly submerges instead of vanishing in a fireball
+    let dark = sim.alive ? 1 : 0.35;
+    let alpha = 1;
+    if (sim.waterDitch) {
+      const depth = Math.max(0, sim.groundH - sim.y); // how far under water
+      dark *= 0.75;
+      alpha = clamp(1 - depth / 9, 0.32, 1);
+    }
+    ctx.globalAlpha = alpha;
     drawAircraft(ctx, s, {
       gear: s.fixedGear ? 1 : sim.gear,
       flaps: sim.flapPos,
@@ -1590,8 +1787,58 @@ export class Renderer {
       night: this.tod.night,
       light: this.light.map((v) => v * dark),
       crashed: !sim.alive,
+      suspNose: so.nose,
+      suspMain: so.main,
     });
+    ctx.globalAlpha = 1;
+    // waterline wash over a ditched hull — faint blue-green overlay
+    if (sim.waterDitch && sim.y < sim.groundH + 0.6) {
+      ctx.fillStyle = 'rgba(70,110,140,0.22)';
+      ctx.fillRect(-s.length * 0.55, -0.4, s.length * 1.1, 1.2);
+    }
     ctx.restore();
+  }
+
+  private drawEject(sim: Sim): void {
+    const e = sim.ejectState;
+    if (!e) return;
+    const { ctx } = this;
+    const z = this.cam.zoom;
+    // shadow of the seat/chute on the ground/water
+    const gh = sim.surfaceAt(e.x).h;
+    const h = e.y - gh;
+    if (h < 180 && h > 0.4) {
+      const a = clamp(1 - h / 180, 0, 1) * 0.22;
+      const px = this.sx(e.x);
+      ctx.fillStyle = `rgba(0,0,0,${a})`;
+      ctx.beginPath();
+      const wsh = (e.chute ? 6.5 : 0.9) * z * (0.6 + 0.4 * (1 - h / 180));
+      ctx.ellipse(px, this.sy(gh) + 1, wsh, Math.max(1.2, 0.2 * z), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const night = this.tod.night;
+    const px = this.sx(e.x);
+    const py = this.sy(e.y);
+    // both helpers draw in the metre frame (y up), so set up one world→metre transform
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(z, -z);
+    if (e.chute) drawParachute(ctx, 0, 0, e.t, e.landed);
+    drawEjectSeat(ctx, 0, 0, e.vx, e.vy, e.t, e.chute, e.landed, night);
+    ctx.restore();
+    // faint shroud lines in screen space for extra crispness when far
+    if (e.chute && !e.landed) {
+      const pyTop = this.sy(e.y + 4.2);
+      const pySeat = this.sy(e.y);
+      ctx.strokeStyle = 'rgba(50,50,56,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px - 1, pyTop);
+      ctx.lineTo(px, pySeat);
+      ctx.moveTo(px + 1, pyTop);
+      ctx.lineTo(px, pySeat);
+      ctx.stroke();
+    }
   }
 
   // ---------------------------------------------------------------- particles

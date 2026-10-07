@@ -44,8 +44,10 @@ export interface AirframeDef {
 export const AIRFRAMES: Record<AircraftId, AirframeDef> = {
   pc21: { id: 'pc21', price: 0, rank: 0 },
   cn235: { id: 'cn235', price: 34000, rank: 2 },
+  cn235mpa: { id: 'cn235mpa', price: 39500, rank: 2 },
   ef18: { id: 'ef18', price: 46000, rank: 3 },
   typhoon: { id: 'typhoon', price: 68000, rank: 4 },
+  aw139: { id: 'aw139', price: 52000, rank: 3 },
 };
 
 export type UpgradeEffect = 'thrust' | 'drag' | 'brake' | 'deice' | 'radar' | 'fuel' | 'gear' | 'stab' | 'nav';
@@ -149,6 +151,12 @@ export const MEDALS: MedalDef[] = [
   { id: 'ace', icon: 'trophy', en: 'Ace', es: 'As', descEn: 'Complete 5 contracts in a row.', descEs: 'Completa 5 contratos seguidos.' },
   { id: 'jet', icon: 'jet', en: 'Jet Jockey', es: 'Piloto de jet', descEn: 'Buy the F/A-18 Hornet.', descEs: 'Compra el F/A-18 Hornet.' },
   { id: 'hardcore', icon: 'flame', en: 'No Assist', es: 'Sin ayudas', descEn: 'Land with flight assist off.', descEs: 'Aterriza con la ayuda de vuelo desactivada.' },
+  { id: 'sar_splash', icon: 'chute', en: 'Splash On Target', es: 'En el blanco', descEn: 'Drop the SAR kit within 30 m of the raft.', descEs: 'Suelta el kit SAR a menos de 30 m de la balsa.' },
+  { id: 'sar_master', icon: 'chute', en: 'SAR Master', es: 'Maestro SAR', descEn: 'Complete 5 SAR contracts.', descEs: 'Completa 5 contratos SAR.' },
+  { id: 'lso_ok', icon: 'anchor', en: 'LSO Says OK', es: 'El LSO dice OK', descEn: 'Grade an OK 3-wire trap.', descEs: 'Consigue un OK con el 3er cable.' },
+  { id: 'heli_hover', icon: 'prop', en: 'Hover Hold', es: 'Estacionario', descEn: 'Hover 20 s in the AW139.', descEs: 'Mantén 20 s en estacionario con el AW139.' },
+  { id: 'emergency', icon: 'flame', en: 'Walkaway', es: 'Emergencia superada', descEn: 'Survive a random emergency and land.', descEs: 'Supera una emergencia aleatoria y aterriza.' },
+  { id: 'emergency_master', icon: 'trophy', en: 'Cool Head', es: 'Cabeza fría', descEn: 'Survive 5 emergencies.', descEs: 'Supera 5 emergencias.' },
 ];
 
 export const MEDAL_BY_ID: Record<string, MedalDef> = MEDALS.reduce((a, m) => ((a[m.id] = m), a), {} as Record<string, MedalDef>);
@@ -165,6 +173,7 @@ export interface Profile {
   mode: WorldMode;
   aircraft: AircraftId;
   lang: Lang;
+  emergenciesEnabled?: boolean;
   stats: {
     flights: number;
     seconds: number;
@@ -184,11 +193,14 @@ export interface Profile {
     stormFlights: number;
     nightLandings: number;
     crosswindLandings: number;
+    sarMissions: number;
+    emergencies?: number;
+    heliHours?: number;
   };
 }
 
 export const emptyProfile = (): Profile => ({
-  v: 1,
+  v: 2,
   xp: 0,
   money: 3500,
   owned: ['pc21'],
@@ -198,6 +210,7 @@ export const emptyProfile = (): Profile => ({
   mode: 'open',
   aircraft: 'pc21',
   lang: 'en',
+  emergenciesEnabled: true,
   stats: {
     flights: 0,
     seconds: 0,
@@ -217,12 +230,15 @@ export const emptyProfile = (): Profile => ({
     stormFlights: 0,
     nightLandings: 0,
     crosswindLandings: 0,
+    sarMissions: 0,
+    emergencies: 0,
+    heliHours: 0,
   },
 });
 
 const KEY = 'skybound.profile.v1';
 
-const FLEET: AircraftId[] = ['pc21', 'cn235', 'ef18', 'typhoon'];
+const FLEET: AircraftId[] = ['pc21', 'cn235', 'cn235mpa', 'ef18', 'typhoon', 'aw139'];
 /** Old saves referred to the retired vector aircraft; map them onto the fleet. */
 const LEGACY_AIRCRAFT: Record<string, AircraftId> = {
   sparrow: 'pc21',
@@ -324,6 +340,13 @@ export interface FlightSummary {
   assist: boolean;
   events: string[];
   notes: string[];
+  sarDropDist: number | null;
+  lsoGrade: string | null;
+  missionKind: string | null;
+  emergencyKind?: string | null;
+  survivedEmergency?: boolean;
+  heliHover?: number;
+  isHeli?: boolean;
 }
 
 export interface AwardResult {
@@ -401,9 +424,20 @@ export function award(profile: Profile, s: FlightSummary): AwardResult {
     profile.stats.missions += 1;
     profile.stats.streak += 1;
     profile.stats.bestStreak = Math.max(profile.stats.bestStreak, profile.stats.streak);
+    if (s.missionKind === 'sar') (profile.stats as any).sarMissions = ((profile.stats as any).sarMissions ?? 0) + 1;
+    if (s.survivedEmergency) (profile.stats as any).emergencies = ((profile.stats as any).emergencies ?? 0) + 1;
   } else if (s.missionFailed) {
     profile.stats.missionsFailed += 1;
     profile.stats.streak = 0;
+  }
+  if (s.isHeli) (profile.stats as any).heliHours = ((profile.stats as any).heliHours ?? 0) + s.seconds / 3600;
+  if (s.survivedEmergency) {
+    money += add('Emergency survived', 'Emergencia superada', 650);
+    xp += add('Emergency survived', 'Emergencia superada', 220);
+  }
+  if (s.isHeli && s.heliHover && s.heliHover > 19) {
+    money += add('Hover hold', 'Estacionario', 400);
+    xp += add('Hover hold', 'Estacionario', 140);
   }
 
   const ev = new Set(s.events);
@@ -430,6 +464,12 @@ export function award(profile: Profile, s: FlightSummary): AwardResult {
   candidate('ace', st.bestStreak >= 5);
   candidate('jet', profile.owned.some((id) => id === 'ef18' || id === 'typhoon'));
   candidate('hardcore', !s.assist && s.landings > 0);
+  candidate('sar_splash', s.sarDropDist !== null && s.sarDropDist < 30 && s.missionDone);
+  candidate('sar_master', st.missions >= 5 && s.missionKind === 'sar' ? (profile.stats as any).sarMissions >= 5 : false);
+  candidate('lso_ok', !!s.lsoGrade && s.lsoGrade.includes('OK'));
+  candidate('heli_hover', !!s.isHeli && (s.heliHover ?? 0) > 19);
+  candidate('emergency', !!s.survivedEmergency);
+  candidate('emergency_master', ((profile.stats as any).emergencies ?? 0) >= 5);
 
   const newMedals: MedalDef[] = [];
   for (const id of ev) {

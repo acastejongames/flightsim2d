@@ -10,7 +10,7 @@ import { WEATHERS } from '../game/weather';
 import type { WeatherId } from '../game/weather';
 import { generateMission } from '../game/missions';
 import type { Mission } from '../game/missions';
-import { AIRFRAMES, MEDALS, RANKS, rankFor } from '../game/career';
+import { AIRFRAMES, MEDALS, RANKS, rankFor, saveProfile } from '../game/career';
 import type { Profile } from '../game/career';
 import { setLang, t, t2, useLang } from '../game/i18n';
 import type { SandboxTune } from '../game/sandbox';
@@ -98,6 +98,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }:
   const [showCtl, setShowCtl] = useState(false);
   const [contractMode, setContractMode] = useState(true);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 100000));
+  const [emergOn, setEmergOn] = useState(() => profile.emergenciesEnabled !== false);
 
   const rank = rankFor(profile.xp);
   const spec: AircraftSpec = getAircraft(acId);
@@ -118,6 +119,8 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }:
     if (!owned) return;
     const tune: SandboxTune = { ...sandbox, weather: activeWeather, tod };
     onSandbox(tune);
+    profile.emergenciesEnabled = emergOn;
+    saveProfile(profile);
     onStart(
       {
         mode,
@@ -127,6 +130,7 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }:
         weather: activeWeather,
         mission: contractMode ? mission : null,
         sandbox: tune,
+        emergenciesEnabled: emergOn && !sandbox.god,
       },
       contractMode ? mission : null,
     );
@@ -473,6 +477,29 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }:
                   <span className="border border-emerald-300/30 px-1.5 py-0.5">{t('tuner')} · U</span>
                 </div>
               )}
+            </Panel>
+
+            <Panel className={emergOn && !sandbox.god ? 'border-amber-300/40' : ''}>
+              <div className="flex items-center gap-2">
+                <h2 className={`${H2} mb-0 flex-1`}>{lang === 'es' ? 'Emergencias aleatorias' : 'Random emergencies'}</h2>
+                <button
+                  onClick={() => { const v = !emergOn; setEmergOn(v); profile.emergenciesEnabled = v; saveProfile(profile); }}
+                  className={`px-2.5 py-1 font-mono text-[10px] font-black uppercase tracking-widest ${
+                    emergOn && !sandbox.god ? 'bg-amber-400 text-slate-950' : 'bg-white/10 text-slate-300 hover:bg-white/20'
+                  }`}
+                >
+                  {emergOn && !sandbox.god ? t('on') : t('off')}
+                </button>
+              </div>
+              <p className="mt-2 text-xs leading-snug text-slate-400">
+                {lang === 'es' ? 'Fallo de motor, fuga, hidráulico, eléctrico o ave. Pulsa E para lista de chequeo. Desactivable. God mode las bloquea.' : 'Engine fire, fuel leak, hydraulic, electrical or bird strike. Press E for checklist. Disable here. God mode blocks them.'}
+              </p>
+              <p className="mt-1.5 flex flex-wrap gap-1 font-mono text-[10px] uppercase tracking-wider text-amber-300/80">
+                <span className="border border-amber-300/30 px-1.5 py-0.5">~0.9/30′</span>
+                <span className="border border-amber-300/30 px-1.5 py-0.5">E = ACK</span>
+                <span className="border border-amber-300/30 px-1.5 py-0.5">AW139</span>
+              </p>
+              {sandbox.god && <p className="mt-1 font-mono text-[10px] text-amber-300/70">{lang==='es' ? 'God mode activado: emergencias bloqueadas.' : 'God mode ON: emergencies blocked.'}</p>}
             </Panel>
 
             <button

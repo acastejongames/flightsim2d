@@ -26,36 +26,86 @@ export const CAT_END = 294;
 export const WIRE_RUNOUT = 95;
 export const OCEAN_FLOOR = -3000;
 
+// ---------------------------------------------------------------------------
+// Airport terrain safety: departures must be able to out-climb the ground.
+//
+// Out in the sierra the range can pile a 2000 m wall 1 km past a valley
+// runway end. No transport climbs that. Two things fix it:
+//
+//  1. Site selection prefers airfields whose departure corridors are low
+//     (see getAirport below).
+//  2. A safety ceiling caps the terrain around every airport: right after
+//     the runway the ground can only rise at AP_GRADE (6%), which even a
+//     heavy transport beats with margin, then an ease band ramps the cap
+//     back up so the wild mountains resume a few km out.
+/** metres past the flattened runway core where the climbable cap applies */
+const AP_PROT = 4200;
+/** ease-out band where the cap rises steeply back toward the wild mountains */
+const AP_EASE = 2200;
+/** the cap starts at runway level: a normal climb always stays above it */
+const AP_BASE = 0;
+/** maximum terrain gradient near airports — every aircraft out-climbs this */
+const AP_GRADE = 0.06;
+/** cap gradient inside the ease band, back toward full mountains */
+const AP_EASE_GRADE = 0.45;
+
 const NAMES = [
-  'Port Haven',
-  'Eagle Ridge',
-  'Cape Marlow',
-  'Silver Lake',
-  'Falcon Bay',
-  'North Harbor',
-  'Granite Peak',
-  'Sunset Valley',
-  'Redstone',
-  'Blue Cove',
-  'Iron Mesa',
-  'Windmere',
-  'Kingsport',
-  'Alder Creek',
-  'Stormhaven',
-  'Crescent Isle',
-  'Highfield',
-  'Marlin Point',
+  'Cuatro Vientos',
+  'Getafe',
+  'Barajas',
+  'Los Llanos',
+  'Alcantarilla',
+  'Matacán',
+  'Villanubla',
+  'Talavera',
+  'Morón',
+  'Armilla',
+  'Salamanca',
+  'Zaragoza',
+  'San Javier',
+  'Villafría',
+  'La Virgen del Camino',
+  'Son Sant Joan',
+  'Gando',
+  'Pollensa',
 ];
 
+/**
+ * Meseta Central: the high plateau around Madrid/Torrejón sits near 600 m,
+ * gently rolling, with broad páramo swells and the odd isolated cerro —
+ * never a procedural 2000 m spike next to the runway.
+ */
+export const MESETA = 620;
+
 function natural(x: number): number {
-  const n0 = fbm(x / 7000, 11, 4);
-  const n = 0.5 + (n0 - 0.5) * 2.3;
-  const m = fbm(x / 900, 23, 4);
-  let h = (n - 0.5) * 2600;
-  const inland = smoothstep(0.52, 0.8, n);
-  const r = 1 - Math.abs(2 * fbm(x / 2300, 37, 4) - 1);
-  h += inland * (r * r * 2300 + (m - 0.5) * 380);
-  h += (m - 0.5) * 50;
+  // --- the meseta: gently rolling high plain, vegas and páramos
+  let h = MESETA + (fbm(x / 5200, 11, 3) - 0.5) * 70;
+  // broad alcarria swells, up to ~130 m over several km — never a wall
+  h += smoothstep(0.55, 0.9, fbm(x / 14000, 23, 2)) * 130;
+  // cerros testigo: sparse isolated hills, +60..200 m, ~1 km across
+  const HCELL = 9000;
+  const ci = Math.floor(x / HCELL);
+  for (let k = ci - 1; k <= ci + 1; k++) {
+    if (hash(k * 3.71 + 11.3) < 0.5) continue; // about half the cells grow a hill
+    const c = (k + 0.5) * HCELL + (hash(k * 7.7 + 1.2) - 0.5) * 4200;
+    const amp = 60 + hash(k * 5.3 + 4.4) * 140;
+    const w = 320 + hash(k * 9.1 + 2.8) * 340;
+    const d = (x - c) / w;
+    if (d > 4 || d < -4) continue;
+    h += amp * Math.exp(-d * d);
+  }
+  // small-scale roughness
+  h += (fbm(x / 700, 37, 2) - 0.5) * 10;
+  const meseta = h;
+
+  // --- Sistema Central: a real mountain range far from home, with foothills
+  // rising over tens of km — Guadarrama-style, peaks to ~2300 m
+  const mask = smoothstep(60000, 95000, Math.abs(x));
+  if (mask > 0) {
+    const r = 1 - Math.abs(2 * fbm(x / 2600, 51, 4) - 1);
+    const sierra = 1050 + r * r * 1150 + (fbm(x / 900, 77, 3) - 0.5) * 260;
+    h = lerp(meseta, sierra, mask);
+  }
   return h;
 }
 
@@ -66,14 +116,24 @@ export function getAirport(k: number): Airport {
   if (hit) return hit;
   let ap: Airport;
   if (k === 0) {
-    ap = { id: 0, name: 'Home Field', x: 0, elev: 28, len: 2400 };
+    ap = { id: 0, name: 'Torrejón', x: 0, elev: 610, len: 2400 };
   } else {
     let best = k * CELL;
     let bestScore = 1e9;
-    for (let j = 0; j < 8; j++) {
-      const cx = k * CELL + (hash(k * 7.1 + j * 3.3) - 0.5) * 5000;
+    for (let j = 0; j < 14; j++) {
+      const cx = k * CELL + (hash(k * 7.1 + j * 3.3) - 0.5) * 6400;
       const nat = natural(cx);
-      const sc = Math.abs(nat - 90);
+      // departure corridors: sample the ground the pilot will climb over on
+      // both runway ends and penalise high terrain, weighted toward the
+      // runway — a wall 1 km out kills you, a peak 4 km out just needs a turn
+      let corridor = 0;
+      for (const s of [-1, 1]) {
+        for (let dt = 400; dt <= 5200; dt += 600) {
+          const h = natural(cx + s * dt);
+          corridor += Math.max(0, h - 820) / (1 + dt / 2500);
+        }
+      }
+      const sc = Math.abs(nat - 640) + corridor * 0.35;
       if (sc < bestScore) {
         bestScore = sc;
         best = cx;
@@ -83,7 +143,7 @@ export function getAirport(k: number): Airport {
       id: k,
       name: NAMES[Math.floor(hash(k * 13.7) * NAMES.length) % NAMES.length],
       x: Math.round(best),
-      elev: 12 + hash(k * 3.3) * 170,
+      elev: 560 + hash(k * 3.3) * 220,
       len: 1700 + Math.floor(hash(k * 5.5) * 1300),
     };
   }
@@ -118,6 +178,33 @@ export function terrainHeight(x: number, mode: WorldMode): number {
     if (d < half + 1800) {
       const t = 1 - smoothstep(half, half + 1800, d);
       h = lerp(h, ap.elev, t);
+    }
+    // safety ceiling: past the flattened core the ground may only rise at a
+    // gradient every aircraft out-climbs, so a normal departure always has an
+    // escape. Far out, an ease band ramps the cap back to the wild mountains.
+    const PROT = half + AP_PROT;
+    if (d > half && d < PROT + AP_EASE) {
+      const dt = Math.max(0, d - ap.len / 2);
+      let ceiling: number;
+      let soft: number;
+      if (d <= PROT) {
+        ceiling = ap.elev + Math.max(2, AP_BASE + dt * AP_GRADE);
+        soft = 0; // hard cap: guaranteed climbable
+      } else {
+        const base = ap.elev + Math.max(2, AP_BASE + (PROT - ap.len / 2) * AP_GRADE);
+        ceiling = base + (d - PROT) * AP_EASE_GRADE;
+        soft = 120; // rounded cap: capped peaks read as hills, not mesas
+      }
+      // a lumpy cap so long capped ridges read as hillsides, not concrete ramps
+      ceiling += (fbm(x / 260, 77, 3) - 0.5) * 12;
+      if (h > ceiling) {
+        if (soft > 0) {
+          const over = h - ceiling;
+          h = ceiling + soft * (1 - Math.exp(-over / soft));
+        } else {
+          h = ceiling;
+        }
+      }
     }
   }
   return h;

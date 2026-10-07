@@ -16,7 +16,7 @@ const PUB = process.env.GAME_PUBLIC ?? path.resolve('public');
 
 // ---------------------------------------------------------------- DOM stub
 const decoded = new Map<string, any>();
-async function preloadPublic(): Promise<number> {
+export async function preloadPublic(): Promise<number> {
   const walk = (dir: string): string[] =>
     readdirSync(dir).flatMap((f) => {
       const p = path.join(dir, f);

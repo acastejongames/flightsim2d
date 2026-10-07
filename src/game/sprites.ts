@@ -430,9 +430,11 @@ export function drawAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: 
 //   eject_seat.png  → rocket phase (chute closed)
 //   eject_combined.png → seat + canopy + 6 shroud lines baked into the PNG (chute open)
 // User constraint 2026-10-07: “tienen que ser Sprites, ya sea uno junto o dos, pero nunca algo generado con codigo”
-const EJECT_SRC = 'images/eject_seat.png';
-const CHUTE_SRC = 'images/parachute.png'; // kept for legacy but not used procedurally when combined exists
-const EJECT_COMBINED_SRC = 'images/eject_combined.png';
+// Use Vite BASE_URL so the same code works in dev (BASE='/') and in Pages (BASE='/flightsim2d/').
+const _BASE: string = ((import.meta as any)?.env?.BASE_URL as string) || '/';
+const EJECT_SRC = `${_BASE}images/eject_seat.png`;
+const CHUTE_SRC = `${_BASE}images/parachute.png`; // kept for legacy but not used procedurally when combined exists
+const EJECT_COMBINED_SRC = `${_BASE}images/eject_combined.png`;
 export function ejectSeatImage(): HTMLImageElement | null {
   return spriteImage(EJECT_SRC);
 }
@@ -441,6 +443,14 @@ export function parachuteImage(): HTMLImageElement | null {
 }
 export function ejectCombinedImage(): HTMLImageElement | null {
   return spriteImage(EJECT_COMBINED_SRC);
+}
+// Eager preload — so first ejection (Ctrl+E) is not invisible for 100 ms while the PNG decodes.
+// Without this, spriteImage() is only called at ejection time and the first frame returns null.
+if (typeof Image !== 'undefined') {
+  // fire-and-forget: start decoding now, drawEjectSeat will find rec.ok === true on next frames
+  spriteImage(EJECT_SRC);
+  spriteImage(EJECT_COMBINED_SRC);
+  spriteImage(CHUTE_SRC);
 }
 
 /**

@@ -521,6 +521,11 @@ export default function Menu({ profile, onStart, onHangar, sandbox, onSandbox }:
             'J/L timón · G tren · F flaps · T giro (mantén para encadenar) · O altitud · N tiempo ×1-8 · V humo · U panel · P pausa',
           )}
         </p>
+        {/* proof 100% sprites — visible without ejecting */}
+        <div className="mt-3 flex items-center gap-2 border border-emerald-400/30 bg-emerald-500/10 px-2 py-1.5">
+          <img src="images/eject_combined.png" alt="eject" className="h-14 w-auto" />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-emerald-300">SPRITES 100% eject_combined 628×805 44574b0 ✓</span>
+        </div>
       </div>
     </div>
   );

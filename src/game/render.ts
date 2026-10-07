@@ -1820,25 +1820,13 @@ export class Renderer {
     const px = this.sx(e.x);
     const py = this.sy(e.y);
     // both helpers draw in the metre frame (y up), so set up one world→metre transform
+    // 100 % sprites: no screen-space lineTo — lines are baked into eject_combined.png
     ctx.save();
     ctx.translate(px, py);
     ctx.scale(z, -z);
     if (e.chute) drawParachute(ctx, 0, 0, e.t, e.landed);
     drawEjectSeat(ctx, 0, 0, e.vx, e.vy, e.t, e.chute, e.landed, night);
     ctx.restore();
-    // faint shroud lines in screen space for extra crispness when far
-    if (e.chute && !e.landed) {
-      const pyTop = this.sy(e.y + 4.2);
-      const pySeat = this.sy(e.y);
-      ctx.strokeStyle = 'rgba(50,50,56,0.45)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(px - 1, pyTop);
-      ctx.lineTo(px, pySeat);
-      ctx.moveTo(px + 1, pyTop);
-      ctx.lineTo(px, pySeat);
-      ctx.stroke();
-    }
   }
 
   // ---------------------------------------------------------------- particles

@@ -426,19 +426,28 @@ export function drawAircraft(ctx: CanvasRenderingContext2D, s: AircraftSpec, P: 
 
 // ---------------------------------------------------------------- universal ejection seat & parachute (all fighters)
 // One shared sprite for every jet — no per-aircraft artwork needed.
+// 100 % sprites: no procedural seat, dome or shroud-line drawing.
+//   eject_seat.png  → rocket phase (chute closed)
+//   eject_combined.png → seat + canopy + 6 shroud lines baked into the PNG (chute open)
+// User constraint 2026-10-07: “tienen que ser Sprites, ya sea uno junto o dos, pero nunca algo generado con codigo”
 const EJECT_SRC = 'images/eject_seat.png';
-const CHUTE_SRC = 'images/parachute.png';
+const CHUTE_SRC = 'images/parachute.png'; // kept for legacy but not used procedurally when combined exists
+const EJECT_COMBINED_SRC = 'images/eject_combined.png';
 export function ejectSeatImage(): HTMLImageElement | null {
   return spriteImage(EJECT_SRC);
 }
 export function parachuteImage(): HTMLImageElement | null {
   return spriteImage(CHUTE_SRC);
 }
+export function ejectCombinedImage(): HTMLImageElement | null {
+  return spriteImage(EJECT_COMBINED_SRC);
+}
 
 /**
- * Draw the universal ejection seat (metre frame, y up). Tries the hand-drawn
- * sprite first; if it is still loading, falls back to a crisp procedural
- * seat+pilot silhouette so the ejection is never invisible.
+ * Draw the universal ejection seat (metre frame, y up).
+ * Pure sprite — no procedural fallback, no canvas lineTo.
+ *  - chute closed: eject_seat.png (1.45 m)
+ *  - chute open  : eject_combined.png (seat+canopy+lines, ~7.8 m tall) centred so the seat stays at (x,y)
  */
 export function drawEjectSeat(
   ctx: CanvasRenderingContext2D,
@@ -453,172 +462,84 @@ export function drawEjectSeat(
 ): void {
   void _vy;
   void _night;
+  if (chuteOpen && !landed) {
+    // Open chute → single combined sprite (user wants lines baked into PNG)
+    const img = ejectCombinedImage();
+    if (!img) return; // sprite only, no procedural fallback (headless tests: invisible, not a rectangle)
+    // Combined PNG: after trim ~628×805, aspect ~0.78.
+    // In world: total height ~7.8 m → width ~6.08 m, dome diameter ~5.4 m (visually ~7 m scale, not 12.3 m).
+    // Dome ry 42, seat olive #6e7d3a, trim transparent, harness confluence at 0.95 m above seat.
+    // Seat centre is ~82 % from top of trimmed image (27,110 seat centre, dome at 44, total 170 → 122/170≈0.718? trimmed 628×805 → measured seat centre ~78 % from top).
+    // Empirically -h*0.78 puts the seat's harness at (x,y) and the dome ~4.2 m above, lines visibly over opaque seat.
+    const h = 7.8;
+    const asp = (img.naturalWidth / Math.max(1, img.naturalHeight)) || 0.78;
+    const w = h * asp;
+    const sway = Math.sin(t * 1.7) * 0.35;
+    ctx.save();
+    ctx.translate(x + sway, y);
+    const tilt = Math.sin(t * 1.6) * 0.08;
+    ctx.rotate(tilt);
+    ctx.save();
+    ctx.scale(1, -1);
+    // seat centre ~84 % from top of trimmed 628×805 (measured 135/160.5), harness ~76 % → lines land ~0.63 m above seat, visible over opaque seat, confluence at 122
+    ctx.drawImage(img, -w / 2, -h * 0.84, w, h);
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
+  // Chute closed → rocket seat alone
   const img = ejectSeatImage();
+  if (!img) return; // sprites only — no procedural fallback
+  const h = 1.45;
+  const asp = (img.naturalWidth / Math.max(1, img.naturalHeight)) || 0.96;
+  const w = h * asp;
   ctx.save();
   ctx.translate(x, y);
-  // slight tumble while the rocket fires, then upright under chute
-  const tilt = chuteOpen ? Math.sin(t * 1.6) * 0.08 : clamp(vx * 0.02, -0.4, 0.4) + Math.sin(t * 9) * 0.05;
+  const tilt = clamp(vx * 0.02, -0.4, 0.4) + Math.sin(t * 9) * 0.05;
   ctx.rotate(tilt);
-  if (img) {
-    // seat bitmap: ~1.45 m tall, aspect from the file
-    const h = 1.45;
-    const asp = (img.naturalWidth / Math.max(1, img.naturalHeight)) || 0.72;
-    const w = h * asp;
+  // rocket flame is a transient VFX, not a parachute/seat sprite — keep lightweight procedural flame (not the seat itself)
+  if (t < 0.9) {
     ctx.save();
-    ctx.scale(1, -1); // world y up → canvas y down
-    ctx.drawImage(img, -w / 2, -h * 0.2, w, h);
-    ctx.restore();
-  } else {
-    // fallback procedural seat+pilot — always visible before the image decodes
-    const col = (r: number, g: number, b: number, a = 1): string =>
-      `rgba(${r},${g},${b},${a})`;
-    // seat pan — grey
-    ctx.fillStyle = col(62, 66, 72);
-    ctx.fillRect(-0.32, -0.52, 0.64, 0.95);
-    // backrest
-    ctx.fillStyle = col(48, 52, 58);
-    ctx.fillRect(-0.28, -0.52, 0.12, 1.05);
-    // headrest
-    ctx.fillStyle = col(90, 94, 100);
-    ctx.fillRect(-0.34, 0.38, 0.68, 0.18);
-    // pilot torso — verde oliva Ejercito del Aire (olive drab)
-    ctx.fillStyle = col(88, 94, 58);
-    ctx.fillRect(-0.18, -0.1, 0.36, 0.52);
-    // pilot legs — same olive
-    ctx.fillStyle = col(88, 94, 58);
-    ctx.fillRect(-0.18, -0.48, 0.36, 0.14);
-    // helmet
-    ctx.fillStyle = col(242, 242, 246);
+    ctx.globalCompositeOperation = 'lighter';
+    const f = 1 - t / 0.9;
+    ctx.fillStyle = `rgba(255,170,60,${0.75 * f})`;
     ctx.beginPath();
-    ctx.arc(0, 0.54, 0.16, 0, Math.PI * 2);
+    ctx.moveTo(0, -0.52);
+    ctx.lineTo(-0.18, -1.25);
+    ctx.lineTo(0.18, -1.25);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = col(30, 30, 34, 0.85);
-    ctx.fillRect(-0.11, 0.5, 0.22, 0.08);
-    // visor
-    ctx.fillStyle = col(20, 20, 24, 0.9);
-    ctx.fillRect(0.04, 0.52, 0.16, 0.06);
-    // parachute pack on back
-    ctx.fillStyle = col(210, 214, 220);
-    ctx.fillRect(-0.36, -0.22, 0.14, 0.48);
-    // rocket nozzle hint if still firing (first 0.8 s)
-    if (!chuteOpen && t < 0.9) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const f = 1 - t / 0.9;
-      ctx.fillStyle = `rgba(255,170,60,${0.75 * f})`;
-      ctx.beginPath();
-      ctx.moveTo(0, -0.52);
-      ctx.lineTo(-0.18, -1.25);
-      ctx.lineTo(0.18, -1.25);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = `rgba(255,240,210,${0.9 * f})`;
-      ctx.beginPath();
-      ctx.moveTo(0, -0.52);
-      ctx.lineTo(-0.09, -1.0);
-      ctx.lineTo(0.09, -1.0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-    // collapsed chute bundle on back when not open
-    if (!chuteOpen && !landed) {
-      ctx.fillStyle = col(245, 245, 250, 0.95);
-      ctx.fillRect(-0.14, 0.56, 0.28, 0.12);
-    }
+    ctx.fillStyle = `rgba(255,240,210,${0.9 * f})`;
+    ctx.beginPath();
+    ctx.moveTo(0, -0.52);
+    ctx.lineTo(-0.09, -1.0);
+    ctx.lineTo(0.09, -1.0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
+  ctx.save();
+  ctx.scale(1, -1);
+  ctx.drawImage(img, -w / 2, -h * 0.22, w, h);
+  ctx.restore();
   ctx.restore();
 }
 
-/** Parachute canopy — dome + shroud lines hanging to the seat. */
+/**
+ * Parachute canopy — NO-OP when the combined sprite exists.
+ * The combined PNG already contains dome (hemispherical ry 42) + 6 shroud lines baked in.
+ * Keeping a separate drawParachute that generates lines with canvas would violate the
+ * sprites-only constraint, so we deliberately do nothing here; the canopy is drawn
+ * as part of eject_combined.png in drawEjectSeat when chuteOpen.
+ * When landed we also draw nothing (canopy collapses).
+ */
 export function drawParachute(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  t: number,
-  landed: boolean,
+  _ctx: CanvasRenderingContext2D,
+  _x: number,
+  _y: number,
+  _t: number,
+  _landed: boolean,
 ): void {
-  if (landed) return;
-  const img = parachuteImage();
-  const canopyY = y + 4.2; // canopy floats above the seat
-  const sway = Math.sin(t * 1.7) * 0.45;
-  ctx.save();
-  ctx.translate(x + sway, canopyY);
-  if (img) {
-    const h = 2.6; // dome height in metres — matches the 260px PNG after trim
-    const asp = (img.naturalWidth / Math.max(1, img.naturalHeight)) || 1.55;
-    const w = h * asp; // keep world width = canopy diameter ~7 m (PNG already wide)
-    ctx.save();
-    ctx.scale(1, -1);
-    // dome is centred at canopyY; PNG is tightly cropped to the dome silhouette
-    ctx.drawImage(img, -w / 2, -h / 2, w, h);
-    ctx.restore();
-    // shroud lines — crisp, always meet the harness at the top of the seat
-    ctx.strokeStyle = 'rgba(28,30,36,0.98)';
-    ctx.lineWidth = 0.09;
-    ctx.beginPath();
-    for (let k = -1; k <= 1; k += 0.5) {
-      const sx = k * w * 0.40;
-      const sy = -h * 0.44; // bottom skirt of the canopy
-      const ex = k * 0.14;
-      const ey = -4.2 + 0.95; // harness ~0.95 m above seat centre (shoulders)
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(ex, ey);
-    }
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(28,30,36,0.98)';
-    ctx.beginPath();
-    ctx.arc(0, -4.2 + 0.95, 0.09, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // fallback procedural dome — 8 gore canopy
-    const gores = 8;
-    const R = 1.85;
-    for (let i = 0; i < gores; i++) {
-      const a0 = (i / gores) * Math.PI - Math.PI / 2;
-      const a1 = ((i + 1) / gores) * Math.PI - Math.PI / 2;
-      const alt = i % 2 === 0;
-      ctx.fillStyle = alt ? 'rgba(248,248,252,0.98)' : 'rgba(255,122,40,0.98)';
-      ctx.beginPath();
-      ctx.moveTo(0, 0.35);
-      ctx.arc(0, 0.35, R, a0, a1);
-      ctx.closePath();
-      ctx.fill();
-      // gore seam
-      ctx.strokeStyle = 'rgba(30,30,36,0.18)';
-      ctx.lineWidth = 0.02;
-      ctx.beginPath();
-      ctx.moveTo(0, 0.35);
-      ctx.lineTo(Math.cos(a0) * R, Math.sin(a0) * R + 0.35);
-      ctx.stroke();
-    }
-    // dome outline + highlight
-    ctx.strokeStyle = 'rgba(30,30,36,0.35)';
-    ctx.lineWidth = 0.045;
-    ctx.beginPath();
-    ctx.arc(0, 0.35, R, Math.PI, 0);
-    ctx.stroke();
-    // shroud lines — meet the harness 0.95 m above seat
-    ctx.strokeStyle = 'rgba(30,32,38,0.98)';
-    ctx.lineWidth = 0.09;
-    ctx.beginPath();
-    for (let i = 0; i < gores; i++) {
-      const a = (i / gores) * Math.PI - Math.PI / 2 + Math.PI / gores / 2;
-      const cx = Math.cos(a) * R * 0.78;
-      const cy = Math.sin(a) * R + 0.35;
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx * 0.09, -3.25);
-    }
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(30,32,38,0.98)';
-    ctx.beginPath();
-    ctx.arc(0, -3.25, 0.09, 0, Math.PI * 2);
-    ctx.fill();
-    // tiny vent at apex
-    ctx.fillStyle = 'rgba(30,30,34,0.9)';
-    ctx.beginPath();
-    ctx.arc(0, 0.35 + R, 0.13, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
+  // intentionally empty — 100 % sprite: use eject_combined.png
+  return;
 }

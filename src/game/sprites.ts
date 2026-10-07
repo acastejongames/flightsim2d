@@ -472,7 +472,7 @@ export function drawEjectSeat(
     // fallback procedural seat+pilot — always visible before the image decodes
     const col = (r: number, g: number, b: number, a = 1): string =>
       `rgba(${r},${g},${b},${a})`;
-    // seat pan
+    // seat pan — grey
     ctx.fillStyle = col(62, 66, 72);
     ctx.fillRect(-0.32, -0.52, 0.64, 0.95);
     // backrest
@@ -481,9 +481,12 @@ export function drawEjectSeat(
     // headrest
     ctx.fillStyle = col(90, 94, 100);
     ctx.fillRect(-0.34, 0.38, 0.68, 0.18);
-    // pilot torso (orange suit)
-    ctx.fillStyle = col(238, 118, 34);
+    // pilot torso — verde oliva Ejercito del Aire (olive drab)
+    ctx.fillStyle = col(88, 94, 58);
     ctx.fillRect(-0.18, -0.1, 0.36, 0.52);
+    // pilot legs — same olive
+    ctx.fillStyle = col(88, 94, 58);
+    ctx.fillRect(-0.18, -0.48, 0.36, 0.14);
     // helmet
     ctx.fillStyle = col(242, 242, 246);
     ctx.beginPath();
@@ -542,22 +545,31 @@ export function drawParachute(
   ctx.save();
   ctx.translate(x + sway, canopyY);
   if (img) {
-    const h = 2.8; // dome height in metres
+    const h = 2.6; // dome height in metres — matches the 260px PNG after trim
     const asp = (img.naturalWidth / Math.max(1, img.naturalHeight)) || 1.55;
-    const w = h * asp * 1.8; // parachute is wide
+    const w = h * asp; // keep world width = canopy diameter ~7 m (PNG already wide)
     ctx.save();
     ctx.scale(1, -1);
+    // dome is centred at canopyY; PNG is tightly cropped to the dome silhouette
     ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.restore();
-    // shroud lines — drawn even with sprite so they stay crisp at any zoom
-    ctx.strokeStyle = 'rgba(40,40,46,0.85)';
-    ctx.lineWidth = 0.032;
+    // shroud lines — crisp, always meet the harness at the top of the seat
+    ctx.strokeStyle = 'rgba(28,30,36,0.98)';
+    ctx.lineWidth = 0.09;
     ctx.beginPath();
     for (let k = -1; k <= 1; k += 0.5) {
-      ctx.moveTo(k * w * 0.42, -h * 0.45);
-      ctx.lineTo(k * 0.22, -4.05 - (Math.abs(k) * 0.4));
+      const sx = k * w * 0.40;
+      const sy = -h * 0.44; // bottom skirt of the canopy
+      const ex = k * 0.14;
+      const ey = -4.2 + 0.95; // harness ~0.95 m above seat centre (shoulders)
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
     }
     ctx.stroke();
+    ctx.fillStyle = 'rgba(28,30,36,0.98)';
+    ctx.beginPath();
+    ctx.arc(0, -4.2 + 0.95, 0.09, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     // fallback procedural dome — 8 gore canopy
     const gores = 8;
@@ -586,18 +598,22 @@ export function drawParachute(
     ctx.beginPath();
     ctx.arc(0, 0.35, R, Math.PI, 0);
     ctx.stroke();
-    // shroud lines
-    ctx.strokeStyle = 'rgba(40,40,46,0.9)';
-    ctx.lineWidth = 0.03;
+    // shroud lines — meet the harness 0.95 m above seat
+    ctx.strokeStyle = 'rgba(30,32,38,0.98)';
+    ctx.lineWidth = 0.09;
     ctx.beginPath();
     for (let i = 0; i < gores; i++) {
       const a = (i / gores) * Math.PI - Math.PI / 2 + Math.PI / gores / 2;
       const cx = Math.cos(a) * R * 0.78;
       const cy = Math.sin(a) * R + 0.35;
       ctx.moveTo(cx, cy);
-      ctx.lineTo(cx * 0.12, -3.9);
+      ctx.lineTo(cx * 0.09, -3.25);
     }
     ctx.stroke();
+    ctx.fillStyle = 'rgba(30,32,38,0.98)';
+    ctx.beginPath();
+    ctx.arc(0, -3.25, 0.09, 0, Math.PI * 2);
+    ctx.fill();
     // tiny vent at apex
     ctx.fillStyle = 'rgba(30,30,34,0.9)';
     ctx.beginPath();

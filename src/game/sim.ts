@@ -24,6 +24,21 @@ import type { FlightSummary } from './career';
 const G = 9.81;
 export const STEP = 1 / 120;
 
+// ---- oleo suspension (visual): rest compression per leg, hard bottoming stop,
+// and a stiff underdamped spring — touchdown thumps decay in ~2 s
+export const SUSP_STATIC_N = 0.1;
+export const SUSP_STATIC_M = 0.16;
+const SUSP_MAX = 0.55;
+const SUSP_K = 150;
+const SUSP_D = 4.4;
+
+/** one oleo bent towards its rest length: stiff, underdamped, bottoming */
+function oleoStep(c: number, v: number, target: number, dt: number): [number, number] {
+  const nv = v + ((target - c) * SUSP_K - v * SUSP_D) * dt;
+  const nc = clamp(c + nv * dt, 0, SUSP_MAX);
+  return [nc, nc <= 0 || nc >= SUSP_MAX ? 0 : nv];
+}
+
 export type SurfaceKind = 'deck' | 'runway' | 'grass' | 'sand' | 'rock' | 'snow' | 'water';
 export interface Surface {
   h: number;
@@ -64,6 +79,15 @@ export interface Input {
   turn?: boolean;
 }
 
+export type EmergencyKind = 'engineFire' | 'fuelLeak' | 'hydraulic' | 'electrical' | 'birdStrike';
+
+export interface Emergency {
+  kind: EmergencyKind;
+  t: number;
+  severity: number;
+  ack: boolean;
+}
+
 export interface SimSettings {
   mode: WorldMode;
   spec: AircraftSpec;
@@ -73,6 +97,10 @@ export interface SimSettings {
   mission: Mission | null;
   /** free-play tuner: everything free, everything adjustable */
   sandbox?: SandboxTune | null;
+  /** phone/tablet: the coaching messages name the touch deck instead of the keys */
+  touch?: boolean;
+  /** random in-flight emergencies (can be disabled) */
+  emergenciesEnabled?: boolean;
 }
 
 interface Aero {
@@ -110,11 +138,18 @@ function liftCoef(alpha: number, CLa: number, a0: number, aS: number): { cl: num
   return { cl: clin + (flat - clin) * k, stall: k };
 }
 
+/** stick shaping: gentle centre for formation and flares, full throw for supermanoeuvres */
+function shapeStick(x: number): number {
+  return Math.sign(x) * Math.pow(Math.abs(x), 1.35);
+}
+
 export class Sim {
   spec: AircraftSpec;
   mode: WorldMode;
   tod: TimeOfDay;
   startAir: boolean;
+  /** touch deck in charge: hints point at the levers and chips, not at the keys */
+  touch = false;
   carrier: Carrier | null = null;
   time = 0;
   private acc = 0;
@@ -139,8 +174,19 @@ export class Sim {
   fuel = 0;
   gear = 1;
   gearCmd = 1;
+  /** oleo compression per leg (m) — visual suspension, see suspPose() */
+  suspN = SUSP_STATIC_N;
+  suspM = SUSP_STATIC_M;
+  private suspVN = 0;
+  private suspVM = 0;
+  /** last taxiway joint under the wheels — one index, both gears kick as one */
+  private lastJoint = 0;
+  private jointInit = false;
   flaps = 0;
   flapPos = 0;
+  /** spoilers: persistent lift-dump + drag, air and ground */
+  spoilerCmd = 0;
+  spoilerPos = 0;
   hook = false;
   hookPos = 0;
   airbrake = 0;
@@ -199,6 +245,18 @@ export class Sim {
   /** how many times god mode has rescued the pilot */
   godSaves = 0;
 
+  // ---- emergencies (deshabilitables) — random in-flight failures
+  emergenciesEnabled = true;
+  emergency: Emergency | null = null;
+  /** time since current emergency started (for HUD flashing) */
+  emergencyTime = 0;
+  private emergencyCooldown = 0;
+  private heliHoverT = 0;
+  /** true for AW139 etc — rotor physics instead of fixed-wing */
+  get isHeli(): boolean {
+    return this.spec.kind === 'heli';
+  }
+
   // ---- mission & scoring
   mission: MissionRun | null = null;
   combo = 0;
@@ -214,6 +272,15 @@ export class Sim {
   maxG = 0;
   maxMach = 0;
   bestLandingSink = 99;
+  // ---- SAR kit physics: the yellow survival pod dropped from the MPA
+  sarKit: { x: number; y: number; vx: number; vy: number; alive: boolean; landed: boolean; t: number; dist?: number } | null = null;
+  private sarDropCooldown = 0;
+  // ---- LSO (Landing Signal Officer) grading on the carrier
+  lsoGrade = '';
+  lsoDetail = '';
+  private lsoLastCall = 0;
+  private lsoHist: { g: number; speedErr: number; line: number; t: number }[] = [];
+  lsoWaveoff = false;
   /** one-shot thunder flag the audio engine reads */
   thunderPulse = 0;
 
@@ -226,6 +293,16 @@ export class Sim {
   stallWarn = 0;
   overspeed = false;
   pullUp = false;
+  /** GPWS mode 4: gear up, low, slow and descending — landing without wheels */
+  tooLowGear = false;
+  /** reactive windshear: inside a microburst outflow, low down */
+  windshear = false;
+  /** EGPWS caution: rising terrain ahead is inside the projected flight path */
+  terrainAhead = false;
+  /** distance (m) to the threatening terrain, for the HUD */
+  terrainAheadDist = 0;
+  /** height (m) of the threatening terrain */
+  terrainAheadH = 0;
   agl = 0;
   groundH = 0;
   rho = 1.225;
@@ -253,8 +330,11 @@ export class Sim {
     this.mode = s.mode;
     this.tod = s.tod;
     this.startAir = s.startAir;
+    this.touch = !!s.touch;
     this.weather = new Weather(s.weather, s.mode);
     if (s.sandbox) this.setSandbox(s.sandbox, true);
+    this.emergenciesEnabled = s.emergenciesEnabled ?? true;
+    if (this.god) this.emergenciesEnabled = false;
     this.air = this.weather.sample({
       x: 0,
       y: 0,
@@ -281,11 +361,18 @@ export class Sim {
       this.say(
         this.grounded
           ? this.mode === 'carrier'
-            ? t2(
-                'Press X (or hold →) for full throttle, then SPACE to launch from the catapult',
-                'Pulsa X (o mantén →) a tope y luego ESPACIO para lanzarte de la catapulta',
-              )
-            : t2('Hold → for throttle, pull ↑ at rotate speed', 'Mantén → para acelerar y tira ↑ a la velocidad de rotación')
+            ? this.touch
+              ? t2(
+                  'Push the THR lever to the top, then tap CAT to launch',
+                  'Sube la palanca ACEL a tope y toca CATAP para lanzarte',
+                )
+              : t2(
+                  'Press X (or hold →) for full throttle, then SPACE to launch from the catapult',
+                  'Pulsa X (o mantén →) a tope y luego ESPACIO para lanzarte de la catapulta',
+                )
+            : this.touch
+              ? t2('Push the THR lever, then pull the PITCH lever at rotate speed', 'Sube la palanca ACEL y tira de CABECEO a la velocidad de rotación')
+              : t2('Hold → for throttle, pull ↑ at rotate speed', 'Mantén → para acelerar y tira ↑ a la velocidad de rotación')
           : t2('You have the controls', 'Tienes el control'),
         'info',
         '',
@@ -312,11 +399,24 @@ export class Sim {
     if (this.msgs.length > 4) this.msgs.shift();
   }
 
+  /** true when x is over the maritime SAR sea patch (rendered as water) */
+  isSarSea(x: number): boolean {
+    const sar = this.mission?.mission.sar;
+    if (!sar) return false;
+    if (Math.abs(x - sar.targetX) >= 5600) return false;
+    // never flood a runway: the rescue is at sea, not on the airfield
+    const ap = airportAt(x, 420);
+    if (ap) return false;
+    return true;
+  }
+
   surfaceAt(x: number): Surface {
     if (this.carrier) {
       const s = x - this.carrier.x;
       if (s >= 0 && s <= CARRIER_LEN) return { h: DECK_H, kind: 'deck', vx: this.carrier.vx };
     }
+    // SAR sea patch: even over land, the datum area is rendered and behaves as water
+    if (this.isSarSea(x)) return { h: 0, kind: 'water', vx: 0 };
     const th = terrainHeight(x, this.mode);
     if (th <= 0) return { h: 0, kind: 'water', vx: 0 };
     let kind: SurfaceKind = 'grass';
@@ -332,6 +432,7 @@ export class Sim {
       const s = x - this.carrier.x;
       if (s >= 0 && s <= CARRIER_LEN) return 0;
     }
+    if (this.isSarSea(x)) return 0;
     return (terrainHeight(x + 1.5, this.mode) - terrainHeight(x - 1.5, this.mode)) / 3;
   }
 
@@ -359,8 +460,15 @@ export class Sim {
     this.fuel = s.fuelMax;
     this.gear = 1;
     this.gearCmd = 1;
+    this.suspN = SUSP_STATIC_N;
+    this.suspM = SUSP_STATIC_M;
+    this.suspVN = 0;
+    this.suspVM = 0;
+    this.jointInit = false;
     this.flaps = 0;
     this.flapPos = 0;
+    this.spoilerCmd = 0;
+    this.spoilerPos = 0;
     this.hook = false;
     this.hookPos = 0;
     this.airbrake = 0;
@@ -377,6 +485,12 @@ export class Sim {
     this.deckTouched = false;
     this.prevHookS = null;
     this.airTime = 0;
+    this.lsoGrade = '';
+    this.lsoDetail = '';
+    this.lsoHist = [];
+    this.lsoWaveoff = false;
+    this.sarKit = null;
+    this.sarDropCooldown = 0;
     this.engineOut = false;
     this.lowFuelSaid = false;
     this.autoThr = false;
@@ -384,6 +498,12 @@ export class Sim {
     this.particles = [];
     this.shake = 0;
     this.stallWarn = 0;
+    this.pullUp = false;
+    this.tooLowGear = false;
+    this.windshear = false;
+    this.terrainAhead = false;
+    this.terrainAheadDist = 0;
+    this.terrainAheadH = 0;
     this.lastGrade = '';
     this.offset = 0;
     this.rudder = 0;
@@ -391,6 +511,10 @@ export class Sim {
     this.damage = 0;
     this.crab = 0;
     this.excursionTimer = 0;
+    this.emergency = null;
+    this.emergencyTime = 0;
+    this.emergencyCooldown = 0;
+    this.heliHoverT = 0;
   }
 
   private spawn(initial: boolean): void {
@@ -446,8 +570,13 @@ export class Sim {
         this.gear = s.fixedGear ? 1 : 0;
         this.gearCmd = this.gear;
         this.parked = false;
-        this.throttle = 0.6;
-        this.thrust = 0.6;
+        if (s.kind === 'heli') {
+          this.throttle = 0.72;
+          this.thrust = 0.72;
+        } else {
+          this.throttle = 0.6;
+          this.thrust = 0.6;
+        }
       } else {
         this.x = ap.x - ap.len / 2 + 90;
         this.y = ap.elev + s.gearH;
@@ -463,7 +592,7 @@ export class Sim {
   get sensEff(): number {
     // the turn modifier is a flight-feel setting, so it applies in career
     // flights too, not only while the sandbox switch is on
-    return (this.spec.sens ?? 1) * (this.sandbox ? this.sandbox.turn : 1);
+    return (this.spec.sens ?? 1) * (this.sandbox?.turn ?? 1);
   }
 
   // ---------------------------------------------------------------- sandbox
@@ -479,6 +608,10 @@ export class Sim {
   setSandbox(t: SandboxTune, initial = false): void {
     this.sandbox = t;
     this.weather.tune = t.on ? t : null;
+    if (this.god) {
+      this.emergenciesEnabled = false;
+      if (this.emergency) this.clearEmergency();
+    }
     if (!t.on) {
       this.weather.tune = null;
       return;
@@ -527,7 +660,12 @@ export class Sim {
     this.hook = !this.hook;
     if (!this.hook && this.arrested) {
       this.arrested = false;
-      this.say('Hook raised — wire released', 'info', 'Taxi clear. Press R to return to the catapult', 3);
+      this.say(
+        'Hook raised — wire released',
+        'info',
+        this.touch ? t2('Taxi clear. Tap RESET to return to the catapult', 'Pista libre. Toca REINICIO para volver a la catapulta') : 'Taxi clear. Press R to return to the catapult',
+        3,
+      );
     } else this.say(this.hook ? 'Tailhook DOWN' : 'Tailhook UP', 'info', '', 1.6);
   }
 
@@ -545,7 +683,12 @@ export class Sim {
     if (this.grounded) return this.say('Autothrottle available in flight', 'info');
     this.autoThr = !this.autoThr;
     if (this.autoThr) this.atTarget = Math.round(this.ias / 2) * 2;
-    this.say(this.autoThr ? `Autothrottle ON — ${Math.round(this.atTarget * 1.944)} kt` : 'Autothrottle OFF', 'info', this.autoThr ? '← → adjust speed' : '', 2.2);
+    this.say(
+      this.autoThr ? `Autothrottle ON — ${Math.round(this.atTarget * 1.944)} kt` : 'Autothrottle OFF',
+      'info',
+      this.autoThr ? (this.touch ? t2('the lever adjusts speed', 'la palanca ajusta la velocidad') : '← → adjust speed') : '',
+      2.2,
+    );
   }
 
   trim(d: number): void {
@@ -602,23 +745,348 @@ export class Sim {
     this.say(t2('ALT HOLD', 'ALTITUD FIJADA'), 'good', t2(`${Math.round(this.agl)} m AGL`, `${Math.round(this.agl)} m AGL`), 2.5);
   }
 
-  /** Aerobatic smoke trail on/off. */
+  /** Spoilers up/down — persistent toggle, drag + lift dump in every regime. */
+  toggleSpoilers(): void {
+    this.spoilerCmd = this.spoilerCmd > 0.5 ? 0 : 1;
+    this.say(
+      this.spoilerCmd > 0.5 ? t2('SPOILERS UP', 'SPOILERS FUERA') : t2('SPOILERS DOWN', 'SPOILERS DENTRO'),
+      'info',
+      this.touch ? t2('the SPLR chip toggles them', 'el botón SPLR los mueve') : t2('C toggles the spoilers', 'C saca y mete los spoilers'),
+      2.5,
+    );
+  }
+
+  /** Aerobatic smoke trail on/off — display smoke is PC-21 equipment only. */
   toggleSmoke(): void {
+    if (!this.spec.displaySmoke) {
+      this.say(
+        t2('NO SMOKE EQUIPPED', 'SIN HUMO'),
+        'info',
+        t2('Only the PC-21 carries display smoke', 'Solo el PC-21 lleva humo de exhibición'),
+        2.5,
+      );
+      return;
+    }
     this.smokeOn = !this.smokeOn;
     this.say(
       this.smokeOn ? t2('SMOKE ON', 'HUMO ON') : t2('SMOKE OFF', 'HUMO OFF'),
       'info',
-      t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
+      this.touch ? t2('the SMOKE chip toggles it', 'el botón HUMO lo activa') : t2('V toggles the aerobatic smoke', 'V activa y desactiva el humo acrobático'),
       2.5,
     );
+  }
+
+  /** Emergencies master switch (deshabilitables) */
+  toggleEmergencies(): void {
+    this.emergenciesEnabled = !this.emergenciesEnabled;
+    if (!this.emergenciesEnabled && this.emergency) {
+      this.clearEmergency(true);
+      this.say(t2('EMERGENCIES OFF', 'EMERGENCIAS OFF'), 'info', t2('Current emergency cleared', 'Emergencia actual eliminada'), 2.5);
+    } else {
+      this.say(
+        this.emergenciesEnabled ? t2('EMERGENCIES ON', 'EMERGENCIAS ON') : t2('EMERGENCIES OFF', 'EMERGENCIAS OFF'),
+        'info',
+        this.emergenciesEnabled ? t2('Random failures enabled', 'Fallos aleatorios activados') : t2('Random failures disabled', 'Fallos aleatorios desactivados'),
+        2.5,
+      );
+    }
+  }
+
+  /** Player acknowledges / runs checklist: try to mitigate current emergency (E key) */
+  ackEmergency(): void {
+    if (!this.emergency) {
+      this.say(t2('NO EMERGENCY', 'SIN EMERGENCIA'), 'info', '', 1.6);
+      return;
+    }
+    const e = this.emergency;
+    if (e.ack) {
+      this.say(t2('CHECKLIST DONE', 'LISTA HECHA'), 'info', t2('Land as soon as practical', 'Aterriza en cuanto puedas'), 2);
+      return;
+    }
+    e.ack = true;
+    // mitigate per type: fire needs idle, hydraulic needs gear, etc — but ack always helps a bit
+    if (e.kind === 'engineFire') {
+      if (this.throttle < 0.25) {
+        this.say(t2('FIRE — THROTTLE IDLE, EXTINGUISHED', 'INCENDIO — MOTOR AL RALENTÍ, EXTINGUIDO'), 'good', t2('Keep it cool and land', 'Mantén baja potencia y aterriza'), 4);
+        this.emergency = null;
+        this.damage = Math.min(1, this.damage + 0.08);
+      } else {
+        this.say(t2('FIRE ACK — RETARD THROTTLE!', 'INCENDIO CONFIRMADO — ¡REDUCE POTENCIA!'), 'warn', t2('Pull throttle to idle and press E again', 'Pon el motor al ralentí y pulsa E otra vez'), 4);
+        e.ack = false;
+        this.damage += 0.06;
+      }
+      return;
+    }
+    if (e.kind === 'fuelLeak') {
+      this.say(t2('FUEL LEAK ACK — REDUCE POWER, LAND', 'FUGA CONFIRMADA — REDUCE Y ATERRIZA'), 'warn', t2('Find the nearest runway', 'Busca la pista más cercana'), 4);
+    } else if (e.kind === 'hydraulic') {
+      this.say(t2('HYDRAULIC ACK — GEAR MAY JAM', 'HIDRÁULICO CONFIRMADO — TREN SOSPECHOSO'), 'warn', t2('Use emergency extension (G) and brace', 'Intenta bajar el tren (G) y prepárate'), 4);
+      // try to jam gear half-way 30% chance
+      if (this.gearCmd > 0.5 && Math.random() < 0.35) this.gearCmd = 0.5;
+      this.damage += 0.03;
+    } else if (e.kind === 'electrical') {
+      this.say(t2('ELEC ACK — SHED LOAD', 'ELÉCTRICO CONFIRMADO — ALIGERA CARGA'), 'info', t2('Some instruments may flicker', 'Algunos instrumentos pueden fallar'), 3);
+      this.damage += 0.02;
+    } else if (e.kind === 'birdStrike') {
+      this.say(t2('BIRD STRIKE ACK — CHECK ENGINES', 'IMPACTO AVE CONFIRMADO — REVISA MOTOR'), 'warn', t2('Vibration — land soon', 'Vibración: aterriza pronto'), 3);
+    }
+    // after ack, emergency stays as handled but HUD clears flashing after 4s; we keep for scoring until landing
+    e.ack = true;
+  }
+
+  private clearEmergency(showMsg = false): void {
+    if (!this.emergency) return;
+    if (showMsg) this.say(t2('EMERGENCY CLEARED', 'EMERGENCIA RESUELTA'), 'good', '', 2);
+    this.emergency = null;
+    this.emergencyTime = 0;
+    this.emergencyCooldown = 12;
+  }
+
+  triggerEmergency(): void {
+    const kinds: EmergencyKind[] = ['engineFire', 'fuelLeak', 'hydraulic', 'electrical', 'birdStrike'];
+    let kind: EmergencyKind = kinds[Math.floor(Math.random() * kinds.length)];
+    // heli has slightly higher bird strike? no, random
+    // avoid duplicate
+    if (this.emergency) return;
+    // bias bird strike when low and fast
+    if (this.agl < 300 && this.ias > 45 && Math.random() < 0.18) kind = 'birdStrike';
+    const sev = 0.5 + Math.random() * 0.5;
+    this.emergency = { kind, t: 0, severity: sev, ack: false };
+    this.emergencyTime = 0;
+    this.emergencyCooldown = 0;
+    const lang = this.touch;
+    let title = '';
+    let sub = '';
+    let k: Msg['kind'] = 'warn';
+    switch (kind) {
+      case 'engineFire':
+        title = t2('ENGINE FIRE!', '¡FUEGO MOTOR!');
+        sub = t2('Throttle idle + E to extinguish', 'Motor al ralentí + E para extinguir');
+        k = 'bad';
+        this.shake = 0.7;
+        break;
+      case 'fuelLeak':
+        title = t2('FUEL LEAK!', '¡FUGA DE COMBUSTIBLE!');
+        sub = t2('Fuel dropping — land now', 'Combustible cayendo: aterriza ya');
+        k = 'warn';
+        break;
+      case 'hydraulic':
+        title = t2('HYD FAILURE!', '¡FALLO HIDRÁULICO!');
+        sub = t2('Controls degraded — gear may jam', 'Mandos degradados: tren puede fallar');
+        k = 'warn';
+        break;
+      case 'electrical':
+        title = t2('ELEC FAILURE!', '¡FALLO ELÉCTRICO!');
+        sub = t2('Avionics flicker — shed load', 'Aviónica inestable: aligera carga');
+        k = 'warn';
+        break;
+      case 'birdStrike':
+        title = t2('BIRD STRIKE!', '¡IMPACTO DE AVE!');
+        sub = t2('Check engines and airframe', 'Revisa motor y célula');
+        k = 'bad';
+        this.damage += 0.18 + sev * 0.12;
+        this.shake = 0.9;
+        this.hitFlash = 0.4;
+        if (Math.random() < 0.32) { this.engineOut = true; sub = t2('ENGINE DAMAGED!', '¡MOTOR DAÑADO!'); }
+        for (let i = 0; i < 12; i++) this.addParticle('debris', this.x, this.y, this.worldVx*0.2 + (Math.random()-0.5)*12, Math.random()*6, 1.2, 0.6, 0, [200,180,160]);
+        break;
+    }
+    void lang;
+    this.say(title, k, sub, 5);
+  }
+
+  private emergencyTick(dt: number): void {
+    this.emergencyCooldown = Math.max(0, this.emergencyCooldown - dt);
+    if (this.emergency) {
+      this.emergency.t += dt;
+      this.emergencyTime += dt;
+      const e = this.emergency;
+      // apply ongoing effects
+      if (e.kind === 'engineFire') {
+        this.damage += 0.012 * dt * e.severity;
+        this.shake = Math.max(this.shake, 0.25 + Math.sin(this.time*18)*0.12);
+        // fire particles
+        if (Math.random() < 0.28) {
+          const wx = this.x + (this.spec.length*0.1 + Math.random()*2) * this.cEff();
+          this.addParticle('fire', wx, this.y, this.worldVx*0.15 + (Math.random()-0.5)*3, 2+Math.random()*5, 0.7, 1.2, 2, [255, 90+Math.random()*80, 30]);
+          this.addParticle('smoke', wx, this.y, (Math.random()-0.5)*4, 3+Math.random()*4, 2.2, 1.4, 2, [30,30,34]);
+        }
+        // if not acked and throttle high, damage faster
+        if (!e.ack && this.throttle > 0.4) this.damage += 0.018*dt;
+        if (e.ack && this.throttle < 0.25) {
+          // cooling over time clears fire after 6 sec idle
+          if (e.t > 6) { this.clearEmergency(); this.say(t2('FIRE OUT', 'FUEGO APAGADO'), 'good', t2('Land and inspect', 'Aterriza y revisa'), 3); }
+        }
+        if (this.fuel > 0 && Math.random() < 0.008*dt*60) this.fuel = Math.max(0, this.fuel - 1.2*dt);
+      } else if (e.kind === 'fuelLeak') {
+        const leak = 0.85 * e.severity; // kg/s
+        if (this.fuel > 0) this.fuel = Math.max(0, this.fuel - leak*dt);
+        if (this.fuel <= 0 && !this.engineOut) { this.engineOut = true; this.say(t2('FUEL EXHAUSTED — LEAK', 'SIN COMBUSTIBLE: FUGA'), 'bad','',3); }
+        if (Math.random() < 0.05) this.addParticle('smoke', this.x, this.y-0.3, (Math.random()-0.5)*2, 0.5, 0.9, 0.4, 1, [200,200,220]);
+      } else if (e.kind === 'hydraulic') {
+        // degrade brakes and pitch authority slightly
+        if (this.grounded && Math.abs(this.u) > 5 && this.input.brake) {
+          // braking 40% weaker
+        }
+      } else if (e.kind === 'electrical') {
+        if (Math.random() < 0.02) this.hitFlash = Math.max(this.hitFlash, 0.07);
+      } else if (e.kind === 'birdStrike') {
+        if (e.t > 8 && this.damage < 1) {
+          // strike effects linger but no ongoing drain
+        }
+      }
+      // auto-clear on successful landing after ack
+      if (this.grounded && Math.abs(this.u) < 2 && e.ack && e.t > 4) {
+        const was = e.kind;
+        this.clearEmergency();
+        this.events.add('emergency');
+        this.notes.push(`emergency:${was}`);
+        this.say(t2('EMERGENCY HANDLED', 'EMERGENCIA GESTIONADA'), 'good', t2('Aircraft secured', 'Avión asegurado'), 3);
+      }
+      // if not landed in 90 sec and fire, risk crash
+      if (e.kind === 'engineFire' && e.t > 55 && !this.grounded) {
+        this.damage += 0.015*dt;
+        if (this.damage >= 1) this.crash('Engine fire — airframe lost', false);
+      }
+      return;
+    }
+    // no active emergency — roll for new one
+    if (!this.emergenciesEnabled || this.god) return;
+    if (this.grounded || !this.alive) return;
+    if (this.airTime < 9 || this.time < 22) return;
+    if (this.emergencyCooldown > 0) return;
+    // rate: ~0.9 per 1800 sec = 0.0005 per sec
+    const rate = this.isHeli ? 0.00065 : 0.0005; // heli a bit more
+    if (Math.random() < dt * rate) this.triggerEmergency();
+  }
+
+  /** Drop the SAR survival kit (D key / HUD button). */
+  dropKit(): void {
+    if (!this.alive) return;
+    if (!this.mission || this.mission.mission.kind !== 'sar') {
+      this.say(t2('NO SAR CONTRACT', 'SIN CONTRATO SAR'), 'info', t2('Take a SAR contract to use the kit', 'Acepta un contrato SAR para usar el kit'), 2.5);
+      return;
+    }
+    if (!this.mission.sarSpotted) {
+      this.say(t2('FIND THE RAFT FIRST', 'PRIMERO LOCALIZA LA BALSA'), 'warn', t2('Overfly the raft below 320 m to spot it', 'Sobrevuela la balsa por debajo de 320 m'), 3);
+      return;
+    }
+    if (this.mission.sarDropDone) {
+      this.say(t2('KIT ALREADY DROPPED', 'KIT YA LANZADO'), 'info', t2('Return to base and land', 'Vuelve a la base y aterriza'), 2.5);
+      return;
+    }
+    if (this.sarKit && this.sarKit.alive && !this.sarKit.landed) {
+      this.say(t2('KIT IN THE AIR', 'KIT EN EL AIRE'), 'info', '', 1.5);
+      return;
+    }
+    if (this.sarDropCooldown > 0) return;
+    if (this.grounded) {
+      this.say(t2('DROP IN FLIGHT ONLY', 'SOLO EN VUELO'), 'warn', '', 2);
+      return;
+    }
+    // spawn just below the belly
+    const vx = this.worldVx;
+    this.sarKit = { x: this.x, y: this.y - 1.2, vx, vy: this.vy - 1.5, alive: true, landed: false, t: 0 };
+    this.sarDropCooldown = 1.2;
+    this.say(t2('KIT AWAY', '¡KIT FUERA!'), 'good', t2('Watch the splash', 'Vigila el amerizaje'), 2.2);
+    // tiny pod tumbling
+    for (let i = 0; i < 6; i++) this.addParticle('debris', this.x, this.y - 1, vx * 0.3 + (Math.random() - 0.5) * 4, this.vy * 0.5, 1.2, 0.4, 0, [240, 210, 60]);
+  }
+
+  private sarKitTick(dt: number): void {
+    this.sarDropCooldown = Math.max(0, this.sarDropCooldown - dt);
+    if (!this.sarKit || !this.sarKit.alive) return;
+    const k = this.sarKit;
+    k.t += dt;
+    if (!k.landed) {
+      // parachute-retarded fall: terminal ~7 m/s
+      k.vy += (-9.81 - 1.4 * k.vy) * dt;
+      k.vx *= 1 - 0.35 * dt;
+      k.x += k.vx * dt;
+      k.y += k.vy * dt;
+      const surf = this.surfaceAt(k.x);
+      const hitY = surf.h + 0.6;
+      if (k.y <= hitY) {
+        k.y = hitY;
+        k.landed = true;
+        // splash
+        for (let i = 0; i < 18; i++) this.addParticle('splash', k.x, hitY, (Math.random() - 0.5) * 18, 2 + Math.random() * 10, 1.1, 0.9, 1, [240, 240, 255]);
+        for (let i = 0; i < 10; i++) this.addParticle('smoke', k.x, hitY + 0.4, (Math.random() - 0.5) * 6, 1 + Math.random() * 3, 1.6, 0.7, 1.5, [240, 210, 60]);
+        const sar = this.mission?.mission.sar;
+        if (sar && this.mission) {
+          const dist = Math.abs(k.x - sar.targetX);
+          k.dist = dist;
+          this.mission.onDrop(dist);
+          this.sayEvent(this.mission.pending[this.mission.pending.length - 1]);
+          // keep kit visible on water for a while, then fade
+        } else {
+          k.alive = false;
+        }
+      } else if (k.t > 18) {
+        k.alive = false;
+      }
+    } else {
+      // bob on water
+      k.y = this.surfaceAt(k.x).h + 0.6 + Math.sin(this.time * 1.8) * 0.12;
+      if (k.t > 22) k.alive = false;
+    }
+  }
+
+  /** LSO calls during the carrier approach — glide, speed, lineup, waveoff */
+  private lsoTick(_dt: number): void {
+    if (!this.carrier || !this.alive || this.grounded || this.mission?.mission.kind !== 'carrierQual') return;
+    if (this.gear < 0.9 || this.hookPos < 0.9) return;
+    const err = this.olsError();
+    if (err === null) return;
+    const dist = (this.carrier.x + 82) - (this.x - this.spec.hookX * this.cEff());
+    if (dist < 200 || dist > 4300) return;
+    const now = this.time;
+    if (now - this.lsoLastCall < 2.2) return;
+    const speedErr = this.ias * 1.944 - this.spec.vApproach * 1.944;
+    const line = Math.abs(this.offset);
+    // keep a short history for the final grade
+    this.lsoHist.push({ g: err, speedErr, line, t: now });
+    if (this.lsoHist.length > 18) this.lsoHist.shift();
+    // waveoff logic: very low / very high / very lined up at short range
+    const waveLow = err < -1.4 && dist < 1100;
+    const waveHigh = err > 1.7 && dist < 900;
+    const waveLine = line > 12 && dist < 900;
+    if (waveLow || waveHigh || waveLine) {
+      this.lsoWaveoff = true;
+      this.lsoLastCall = now;
+      const reason = waveLow ? (this.touch ? t2('WAVEOFF — LOW!', '¡FRUSTRADA: BAJO!') : 'WAVEOFF, LOW!') : waveHigh ? 'WAVEOFF, HIGH!' : 'WAVEOFF, LINEUP!';
+      this.say(reason, 'bad', t2('Full power — go around', 'Motor a tope: frustrada'), 3);
+      return;
+    }
+    // routine calls
+    if (Math.abs(err) > 1.0) {
+      this.lsoLastCall = now;
+      this.say(err > 0 ? t2('YOU ARE HIGH', 'VAS ALTO') : t2('YOU ARE LOW', 'VAS BAJO'), 'warn', err > 0 ? t2('Ease down', 'Corrige abajo') : t2('Power!', '¡Motor!'), 2);
+      return;
+    }
+    if (Math.abs(speedErr) > 12) {
+      this.lsoLastCall = now;
+      this.say(speedErr > 0 ? t2('YOU ARE FAST', 'VAS RÁPIDO') : t2('YOU ARE SLOW', 'VAS LENTO'), 'warn', '', 2);
+      return;
+    }
+    if (line > 8) {
+      this.lsoLastCall = now;
+      this.say(line > 0 ? t2('LINEUP LEFT', 'ALINÉATE A LA DERECHA') : t2('LINEUP RIGHT', 'ALINÉATE A LA IZQUIERDA'), 'warn', '', 2);
+      return;
+    }
   }
 
   launch(): void {
     if (!this.alive) return;
     if (!this.carrier) return;
     if (this.trapped || (this.arrested && this.u - this.carrier.vx * this.hdg < 0.5)) return this.respawn();
-    if (!this.catHeld) return this.say('Not on the catapult — press R to reposition', 'info');
-    if (this.throttle < 0.85) return this.say('Set throttle to FULL before launch', 'warn', 'Hold → until the bar is full');
+    if (!this.catHeld) return this.say(this.touch ? t2('Not on the catapult — tap RESET', 'No estás en la catapulta: toca REINICIO') : 'Not on the catapult — press R to reposition', 'info');
+    if (this.throttle < 0.85)
+      return this.say(
+        'Set throttle to FULL before launch',
+        'warn',
+        this.touch ? t2('push the THR lever to the top', 'sube la palanca ACEL a tope') : 'Hold → until the bar is full',
+      );
     this.catHeld = false;
     this.catActive = true;
     this.parked = false;
@@ -647,6 +1115,15 @@ export class Sim {
   private frameUpdate(dt: number): void {
     const s = this.spec;
     this.updateEnvironment(dt);
+    this.sarKitTick(dt);
+    this.lsoTick(dt);
+    this.emergencyTick(dt);
+    // heli hover timer for medal (low & slow & level)
+    if (this.isHeli && this.alive && !this.grounded && Math.abs(this.u) < 5 && this.agl < 120 && Math.abs(this.p) < 0.12) {
+      this.heliHoverT += dt;
+    } else if (!this.isHeli || Math.abs(this.u) > 8 || this.agl > 160) {
+      this.heliHoverT = Math.max(0, this.heliHoverT - dt*0.35);
+    }
     for (const m of this.msgs) m.t += dt;
     this.msgs = this.msgs.filter((m) => m.t < m.dur);
     this.shake = Math.max(0, this.shake - dt * 1.5);
@@ -655,27 +1132,146 @@ export class Sim {
     this.groundH = sf.h;
     this.agl = this.y - (this.gear > 0.9 ? s.gearH : s.gearH * 0.4) - sf.h;
     this.maxAlt = Math.max(this.maxAlt, this.y);
+    // ---- oleo suspension (visual only): legs relax towards rest length, shifted
+    // forward under braking (nose dives, mains unload); touchdowns and joints
+    // kick the velocity in touchdown() and below
+    let targetN = SUSP_STATIC_N;
+    let targetM = SUSP_STATIC_M;
+    if (this.grounded && this.alive && this.gear > 0.5 && this.input.brake) {
+      const sp = Math.abs(this.worldVx);
+      if (sp > 1) {
+        const dive = Math.min(0.14, 0.02 + sp * 0.0022);
+        targetN += dive;
+        targetM -= dive * 0.6;
+      }
+    }
+    [this.suspN, this.suspVN] = oleoStep(this.suspN, this.suspVN, targetN, dt);
+    [this.suspM, this.suspVM] = oleoStep(this.suspM, this.suspVM, targetM, dt);
+    // fighters work their oleos over taxiway joints while rolling SLOWLY: both
+    // gears kick as one crossing each slab edge, and the kicks fade as lift
+    // unloads the gear — so slow taxi hops and fast rolls stay smooth
+    if (s.taxiBounce && this.alive) {
+      const JOINT = 9;
+      const j = Math.floor(this.x / JOINT);
+      if (!this.jointInit || !this.grounded || this.gear <= 0.5) {
+        this.lastJoint = j;
+        this.jointInit = true;
+      } else {
+        const sp = Math.abs(this.worldVx);
+        if (sp > 0.5) {
+          const vr = Math.max(20, s.vRotate);
+          const unload = clamp(1 - (sp / vr) * (sp / vr), 0, 1);
+          const kick = 1.8 * unload * unload;
+          if (kick > 0.01 && j !== this.lastJoint) {
+            const k = kick * (0.7 + 0.6 * hash(j * 3.13));
+            this.suspVN += k;
+            this.suspVM += k;
+          }
+        }
+        this.lastJoint = j;
+      }
+    }
     if (this.alive) {
       this.flightTime += dt;
       this.distance += Math.abs(this.worldVx) * dt;
-      // terrain proximity warning
+      // ---- EGPWS: TERRAIN AHEAD caution, escalating to PULL UP ----
+      // The old warning only fired while already descending into the ground.
+      // This one looks 20+ seconds down the flight path: if rising terrain
+      // ahead punches through the projected climb (or level cruise), the
+      // pilot gets an amber TERRAIN AHEAD with time to climb or turn away,
+      // and a red PULL UP once impact is seconds away.
       let warn = false;
+      let ahead = false;
+      let aheadDist = 0;
+      let aheadH = 0;
       if (!this.grounded) {
         const vxw = this.worldVx;
-        for (let t = 1.5; t <= 7; t += 1.5) {
-          const px = this.x + vxw * t;
-          const py = this.y + this.vy * t;
-          const g = Math.max(terrainHeight(px, this.mode), 0);
-          if (py < g + 25 && this.vy < -2) warn = true;
-        }
+        const gs = Math.max(Math.abs(vxw), 25);
+        // mid-reversal the nose sweeps both ways, so watch both directions
+        const dirs = this.turning ? [1, -1] : [Math.abs(vxw) > 8 ? Math.sign(vxw) : this.hdg];
+        // landing inhibit: once stabilised on final the runway environment
+        // ahead is expected — but terrain piercing the glidepath still
+        // escalates to PULL UP below, inhibited or not
         const landingCfg = this.gear > 0.9 && this.flapPos > 0.5;
-        if (landingCfg && this.agl < 400) warn = warn && this.vy < -8;
+        let established = false;
+        if (landingCfg && this.agl < 500 && this.mode === 'open') {
+          const g = this.glidepath();
+          if (g && g.dist < 7000 && Math.abs(g.dev) < 90) established = true;
+        }
+        const margin = this.terrainAhead ? 150 : 90; // hysteresis: no flicker
+        // on a stabilised final the red only shouts when the projected path
+        // truly goes into the hill — a normal 3° path skimming a knoll ahead
+        // of the threshold must not set it off
+        const escMargin = established ? 2 : 25;
+        const maxDist = Math.min(9000, Math.max(2500, gs * 22));
+        for (const dir of dirs) {
+          let found = false;
+          const escDist = Math.min(maxDist, gs * 7.5);
+          for (let dist = 400; dist <= maxDist; dist += 150) {
+            // past the red window the nearest caution breach decides
+            if (found && dist > escDist) break;
+            const px = this.x + dir * dist;
+            const terr = Math.max(terrainHeight(px, this.mode), 0);
+            // only rising ground is a threat: flat land below the flight
+            // path is what the sink-rate check underneath is for
+            if (terr < this.groundH + 60) continue;
+            const t = dist / gs;
+            const clearance = this.y + this.vy * t - terr;
+            if (!found && !established && clearance < margin) {
+              found = true;
+              if (!ahead || dist < aheadDist) {
+                ahead = true;
+                aheadDist = dist;
+                aheadH = terr;
+              }
+            }
+            // red escalation: the projected path pierces rising terrain
+            // within seconds — shout even on final
+            if (dist <= escDist && clearance < escMargin) warn = true;
+          }
+        }
+        // classic sink-rate warning: dropping fast onto the ground right now
+        if (!warn) {
+          for (let t = 1.5; t <= 7; t += 1.5) {
+            const px = this.x + vxw * t;
+            const py = this.y + this.vy * t;
+            const g = Math.max(terrainHeight(px, this.mode), 0);
+            if (py < g + 25 && this.vy < -2) warn = true;
+          }
+          if (landingCfg && this.agl < 400) warn = warn && this.vy < -8;
+        }
       }
       this.pullUp = warn;
+      this.terrainAhead = ahead;
+      // GPWS mode 4: wheels up, low, slow and coming down — the HUD and the
+      // "TOO LOW GEAR" voice share this one flag so they never disagree
+      this.tooLowGear = !s.fixedGear && !this.grounded && this.gearCmd < 0.5 && this.agl < 120 && this.ias < 1.5 * s.vs && this.vy < 0;
+      // reactive windshear: microburst outflow at low altitude
+      this.windshear = !this.grounded && !!this.air && this.air.micro > 0.4;
+      if (ahead) {
+        this.terrainAheadDist = aheadDist;
+        this.terrainAheadH = aheadH;
+      }
       this.refuelTick(dt);
     }
     this.updateParticles(dt);
     this.emitEffects(dt);
+  }
+
+  /**
+   * Suspension pose for the renderer: fuselage lift (m, +up), extra pitch
+   * (rad, +nose-up) and per-leg dynamic deflection (m, +compressed) solved so
+   * both wheels stay planted while the airframe rides the oleos. Parked it is
+   * all zeroes; touchdowns squash through the springs above, and taxiway joints
+   * kick them while fighters roll slowly on their gear.
+   */
+  suspPose(): { lift: number; dpitch: number; nose: number; main: number } {
+    const dN = this.suspN - SUSP_STATIC_N;
+    const dM = this.suspM - SUSP_STATIC_M;
+    const wb = this.spec.noseX - this.spec.mainX;
+    const dp = wb > 0.01 ? (dM - dN) / wb : 0;
+    const lift = -(dN + dM) / 2 - (dp * (this.spec.noseX + this.spec.mainX)) / 2;
+    return { lift, dpitch: dp, nose: dN, main: dM };
   }
 
   /**
@@ -845,7 +1441,8 @@ export class Sim {
     if (inp.turn && !this.turning) this.tryTurn(true);
 
     // autopilot altitude hold: fly the pitch to kill the height and sink errors
-    let pitchCmd = inp.pitch;
+    // manual stick only — altHold below replaces this outright when engaged
+    let pitchCmd = shapeStick(inp.pitch);
     if (this.altHold !== null) {
       if (this.grounded) this.altHold = null;
       else {
@@ -880,6 +1477,7 @@ export class Sim {
     this.hookPos += clamp((this.hook ? 1 : 0) - this.hookPos, -h, h);
     const ab = inp.brake && !this.grounded ? 1 : 0;
     this.airbrake += clamp(ab - this.airbrake, -2 * h, 2 * h);
+    this.spoilerPos += clamp(this.spoilerCmd - this.spoilerPos, -1.5 * h, 1.5 * h);
     // rudder: used to hold the centreline in a crosswind and to de-crab
     this.rudder += clamp((inp.rudder ?? 0) - this.rudder, -3 * h, 3 * h);
 
@@ -965,37 +1563,65 @@ export class Sim {
     const aStall = s.alphaStall * (1 - 0.16 * ice);
     const cla = s.CLa * (1 - 0.2 * ice);
     const lc = liftCoef(alpha, cla, a0, aStall);
-    let Cd = s.Cd0 + s.flapCd * this.flapPos + s.gearCd * this.gear + 0.045 * this.airbrake;
+    const cl = lc.cl * (1 - 0.35 * this.spoilerPos); // spoilers kill lift, air and ground
+    let Cd = s.Cd0 + s.flapCd * this.flapPos + s.gearCd * this.gear + 0.045 * this.airbrake + 0.085 * this.spoilerPos;
     Cd += 0.026 * ice * (1 - (s.deIce ?? 0) * 0.5) * 2.2 + ice * 0.012;
     if (s.kind === 'jet') {
-      Cd += 0.026 * smoothstep(0.88, 1.08, mach) + 0.012 * Math.exp(-Math.pow((mach - 1.05) / 0.12, 2));
+      Cd += (s.waveCd ?? 1) * (0.026 * smoothstep(0.88, 1.08, mach) + 0.012 * Math.exp(-Math.pow((mach - 1.05) / 0.12, 2)));
     } else if (mach > 0.65) Cd += 1.5 * Math.pow(mach - 0.65, 2);
-    Cd += s.k * lc.cl * lc.cl + 1.4 * lc.stall * Math.sin(alpha) * Math.sin(alpha) + 0.25 * Math.sin(alpha) * Math.sin(alpha);
+    Cd += s.k * cl * cl + 1.4 * lc.stall * Math.sin(alpha) * Math.sin(alpha) + 0.25 * Math.sin(alpha) * Math.sin(alpha);
 
-    const Lraw = q * s.S * lc.cl;
+    const Lraw = q * s.S * cl;
     const L = Lraw * cosB;
     const D = q * s.S * Cd;
 
     let T = 0;
     const dens = rho / 1.225;
-    if (s.kind === 'prop') {
-      const lapse = Math.pow(dens, 0.8);
-      T = this.thrust * Math.min(s.thrustStatic * dens, (s.propEff * s.power * lapse) / Math.max(V, 14));
-    } else {
-      const t = this.thrust;
-      const frac = t <= 0.85 ? t / 0.85 : 1 + ((t - 0.85) / 0.15) * (s.thrustAB / s.thrustMil - 1);
-      const idle = this.fuel > 0 && !this.engineOut ? 0.03 : 0;
-      T = s.thrustMil * (idle + frac) * Math.pow(dens, 0.85) * (1 + 0.3 * Math.min(mach, 1.8));
-    }
-
+    let Fx = 0;
+    let Fy = 0;
     const sg = Math.sin(gamma);
     const cg = Math.cos(gamma);
-    const Fx = T * Math.cos(this.p) - L * sg - D * cg;
-    const Fy = T * Math.sin(this.p) + L * cg - D * sg;
+    if (s.kind === 'heli') {
+      // heli rotor thrust is along mast (body Y), tilted by pitch
+      const densFac = Math.pow(dens, 0.62);
+      let tFac = this.thrust;
+      // hydraulic failure reduces collective authority
+      if (this.emergency && this.emergency.kind === 'hydraulic') tFac *= 0.82;
+      T = tFac * s.thrustStatic * densFac;
+      if (this.engineOut) T *= 0.05;
+      else if (this.emergency && this.emergency.kind === 'engineFire') T *= 0.36;
+      // electrical may cause intermittent cut
+      if (this.emergency && this.emergency.kind === 'electrical' && Math.random() < 0.015) T *= 0.55;
+      const Fx_rotor = -T * Math.sin(this.p);
+      const Fy_rotor = T * Math.cos(this.p);
+      // parasite + rotor induced drag, small wing-like lift
+      const CdH = s.Cd0 + s.gearCd * this.gear + 0.04 * this.spoilerPos;
+      const Dpara = q * s.S * CdH;
+      const Lheli = q * s.S * 0.32 * Math.sin(alpha) * (1 - 0.35 * this.spoilerPos);
+      const D = Dpara + s.k * Lheli * Lheli + 0.05 * Math.abs(Lheli);
+      Fx = Fx_rotor - Lheli * sg - D * cg;
+      Fy = Fy_rotor + Lheli * cg - D * sg;
+      // g for heli is rotor thrust/weight, not wing lift
+      this.g = this.grounded ? 1 : Fy_rotor / (m * G);
+    } else {
+      if (s.kind === 'prop') {
+        const lapse = Math.pow(dens, 0.8);
+        T = this.thrust * Math.min(s.thrustStatic * dens, (s.propEff * s.power * lapse) / Math.max(V, 14));
+      } else {
+        const t = this.thrust;
+        const frac = t <= 0.85 ? t / 0.85 : 1 + ((t - 0.85) / 0.15) * (s.thrustAB / s.thrustMil - 1);
+        const idle = this.fuel > 0 && !this.engineOut ? 0.03 : 0;
+        T = s.thrustMil * (idle + frac) * Math.pow(dens, 0.85) * (1 + 0.3 * Math.min(mach, 1.8));
+      }
+      Fx = T * Math.cos(this.p) - L * sg - D * cg;
+      Fy = T * Math.sin(this.p) + L * cg - D * sg;
+      this.g = this.grounded ? 1 : Lraw / (m * G);
+    }
 
-    this.g = this.grounded ? 1 : Lraw / (m * G);
+    if (s.kind !== 'heli') this.g = this.grounded ? 1 : Lraw / (m * G);
     this.stallWarn = alpha > 0.88 * aStall && alpha < 2 && !this.grounded ? 1 : 0;
-    this.overspeed = this.ias > s.vne || (s.kind === 'jet' && mach > 2.0);
+    if (s.kind === 'heli') this.stallWarn = this.vy < -8 && !this.grounded ? 0.6 : 0;
+    this.overspeed = this.ias > s.vne || (s.kind === 'jet' && mach > (s.mmo ?? 2.0));
     if ((this.ias > s.vne * 1.28 || mach > 2.5) && !this.grounded) this.crash('Structural failure — overspeed', false);
 
     return { m, T, L, D, Fx, Fy, q, V, gamma, alpha };
@@ -1030,10 +1656,33 @@ export class Sim {
   private airStep(h: number, A: Aero): void {
     const s = this.spec;
     const { m, q, gamma } = A;
-    this.u += (A.Fx / m) * h;
-    this.vy += (A.Fy / m - G) * h;
+    // heli hydraulic failure adds a bit of extra drag/lag
+    let hxMul = 1;
+    if (this.emergency && this.emergency.kind === 'hydraulic') hxMul = 0.86;
+    this.u += (A.Fx / m) * h * hxMul;
+    this.vy += (A.Fy / m - G) * h * hxMul;
     // evasive high-g turns: agile airframes hold their energy better
     if (this.g > 4 && this.sensEff > 1) this.u += (this.sensEff - 1) * 0.35 * h;
+    // ---- heli: cyclic directly sets pitch (no AoA trim), rotor damps quickly
+    if (s.kind === 'heli') {
+      const target = this.elev * 0.42 + (this.altHold !== null ? clamp((this.altHold - this.y) * 0.015, -0.22, 0.22) : 0);
+      const sens = this.sensEff * (this.emergency && this.emergency.kind === 'hydraulic' ? 0.62 : 1);
+      const Kp = 4.5 * sens;
+      const Kd = 2.2;
+      this.w += (Kp * (target - this.p) - Kd * this.w) * h;
+      // turbulence still hits heli but a bit softer when assist on
+      const damp = 1 - (s.turbDamp ?? 0) * (this.assist ? 0.5 : 1);
+      const tb = Math.min(this.air.turb, 1.35) * damp;
+      if (tb > 0.02) {
+        const kick = (noise1(this.time * 4.3, 73) - 0.5) * 2;
+        this.w += kick * 0.55 * tb * h;
+      }
+      this.p = wrapPi(this.p + this.w * h);
+      // collective inertia is already in thrust spool; vertical damping
+      this.vy *= 1 - 0.08 * h;
+      this.y += this.vy * h;
+      return;
+    }
 
     const bank = this.turning && this.turnKind === 'air' ? 1.0 * Math.sin(Math.PI * this.turnT) : 0;
     const cosB = Math.cos(bank);
@@ -1052,8 +1701,13 @@ export class Sim {
     aTrim = clamp(aTrim, -0.85 * s.alphaStall, 0.85 * s.alphaStall);
 
     const e = this.elev;
-    let aCmd = e >= 0 ? aTrim + e * (1.18 * s.alphaStall - aTrim) : aTrim + e * (aTrim + 0.55 * s.alphaStall);
-    const aMaxG = a0 + (s.gmax * W) / (qq * s.S) / s.CLa;
+    const aLim = s.alphaMax ?? 1.18 * s.alphaStall;
+    let aCmd = e >= 0 ? aTrim + e * (aLim - aTrim) : aTrim + e * (aTrim + 0.55 * s.alphaStall);
+    // fighters hold a minimum turn rate: the g-limiter opens up with speed so
+    // the jet still carves at Mach instead of flying a 10 km arc; the altitude
+    // autopilot keeps the stock limit its capture loop was tuned for
+    const gLim = this.altHold !== null ? s.gmax : Math.max(s.gmax, ((s.minTurnRate ?? 0) * A.V) / G);
+    const aMaxG = a0 + (gLim * W) / (qq * s.S) / s.CLa;
     const aMinG = a0 - (s.gmin * W) / (qq * s.S) / s.CLa;
     aCmd = clamp(aCmd, aMinG, aMaxG);
     if (A.alpha > 0.9 * s.alphaStall && A.alpha < 1.5) aCmd += (Math.random() - 0.5) * 0.06;
@@ -1080,7 +1734,8 @@ export class Sim {
   private structuralTick(h: number): void {
     const s = this.spec;
     if (this.grounded || !this.alive || this.god) return;
-    if (this.g > s.gmax * 1.04) this.damage += (this.g - s.gmax * 1.04) * 0.1 * h;
+    const gLim = Math.max(s.gmax, ((s.minTurnRate ?? 0) * this.tas) / G);
+    if (this.g > gLim * 1.04) this.damage += (this.g - gLim * 1.04) * 0.1 * h;
     if (this.ias > s.vne * 1.02) this.damage += ((this.ias - s.vne * 1.02) / s.vne) * 0.35 * h;
     if (this.air.turb > 0.9) this.damage += (this.air.turb - 0.9) * 0.012 * h;
     if (this.damage >= 1) {
@@ -1125,16 +1780,19 @@ export class Sim {
     // friction — wet runways and contaminated surfaces cost you braking action
     const wet = surf.kind === 'runway' || surf.kind === 'deck' ? this.weather.wetness : this.weather.wetness * 0.5;
     const braking = this.input.brake || this.parked;
+    // heli with hydraulic failure has weaker brakes
+    let brakeMul = (s.brakePower ?? 1) * (s.brakeBonus ?? 1);
+    if (this.emergency && this.emergency.kind === 'hydraulic') brakeMul *= 0.55;
     let mu = this.belly || !gearDown ? 0.5 : 0.03;
     if (gearDown) {
       if (surf.kind === 'grass') mu = 0.07;
       else if (surf.kind === 'sand' || surf.kind === 'snow') mu = 0.12;
       else if (surf.kind === 'rock') mu = 0.2;
-      if (braking) mu = 0.55 * (s.brakeBonus ?? 1);
+      if (braking) mu = 0.7 * brakeMul;
     }
     const hydroplaning = wet > 0.45 && Math.abs(uRel) > 40 ? 0.32 : 1;
     mu *= (1 - 0.42 * wet) * hydroplaning;
-    const normal = Math.max(0, G - A.L / A.m);
+    const normal = s.kind === 'heli' ? Math.max(0, G - A.Fy / A.m) : Math.max(0, G - A.L / A.m);
     const df = mu * normal * h;
 
     if (this.catHeld) {
@@ -1194,20 +1852,24 @@ export class Sim {
       return;
     }
     const liftNet = A.Fy - A.m * G;
-    if (liftNet > 0.1 * A.m * G && !this.catActive && !this.catHeld && !this.arrested && this.p > beta + 0.015 && !this.belly) {
+    const heliLiftOk = s.kind === 'heli' && liftNet > 0.02 * A.m * G;
+    const wingLiftOk = liftNet > 0.1 * A.m * G && this.p > beta + 0.015;
+    if ((heliLiftOk || wingLiftOk) && !this.catActive && !this.catHeld && !this.arrested && !this.belly) {
       this.grounded = false;
       this.airTime = 0;
-      this.vy = Math.max(this.vy, 0.4);
+      this.vy = Math.max(this.vy, s.kind === 'heli' ? 0.6 : 0.4);
       this.y += 0.05;
       if (this.deckTouched && this.carrier) {
         this.deckTouched = false;
         this.say('BOLTER!', 'warn', 'Full power — go around', 3);
       } else if (this.airTime === 0 && Math.abs(this.u) > s.vs * 0.6) {
         this.say('Airborne', 'info', '', 1.4);
+      } else if (s.kind === 'heli') {
+        this.say(t2('AIRBORNE — HOVER', 'EN EL AIRE — ESTACIONARIO'), 'good', t2('Collective controls altitude', 'El colectivo controla la altura'), 2);
       }
       return;
     }
-    this.vy = clamp((newY - this.y) / h, -6, 6);
+    this.vy = clamp((newY - this.y) / h, s.kind === 'heli' ? -3 : -6, 6);
     this.y = newY;
   }
 
@@ -1306,6 +1968,11 @@ export class Sim {
     this.sinkRate = closing;
     this.autoThr = false;
     this.shake = Math.min(1, 0.25 + closing * 0.1);
+    // oleos soak the impact together, both gears equally (belly slides don't bounce)
+    if (!belly && this.gear > 0.5) {
+      this.suspVM += closing * 1.5;
+      this.suspVN += closing * 1.5;
+    }
     const c = this.hdg;
     const wxo = this.x + s.mainX * c;
     for (let i = 0; i < 14; i++) {
@@ -1395,6 +2062,11 @@ export class Sim {
   summary(): FlightSummary {
     const m = this.mission?.mission ?? null;
     const run = this.mission;
+    // heli hover medal check
+    if (this.isHeli && this.heliHoverT > 19 && !this.events.has('heli_hover')) {
+      this.events.add('heli_hover');
+    }
+    const survivedEmergency = this.events.has('emergency');
     return {
       mode: this.mode,
       aircraft: this.spec.id,
@@ -1423,6 +2095,13 @@ export class Sim {
       assist: this.assist,
       events: Array.from(this.events),
       notes: this.notes,
+      sarDropDist: (run as any)?.sarDropDist ?? null,
+      lsoGrade: (this as any).lsoGrade || null,
+      missionKind: m ? m.kind : null,
+      emergencyKind: this.emergency ? this.emergency.kind : (survivedEmergency ? 'survived' : null),
+      survivedEmergency,
+      heliHover: this.heliHoverT,
+      isHeli: this.isHeli,
     };
   }
 
@@ -1467,24 +2146,62 @@ export class Sim {
     this.trapped = true;
     this.traps++;
     const w = this.wire;
-    let pts = w === 2 ? 4 : w === 1 || w === 3 ? 3 : 2;
-    if (this.sinkRate > 5) pts -= 1;
-    if (this.sinkRate < 2.2 && w === 2) pts = 5;
+    // --- LSO grading: wire + glide + speed + lineup + sink
+    // OLS error at trap (degrees), speed error (kts), lineup (m), sink (m/s)
+    const glideErr = Math.abs(this.lsoHist.length ? this.lsoHist[this.lsoHist.length - 1].g : (this.olsError() ?? 0));
+    const avg = this.lsoHist.length ? this.lsoHist.reduce((a, h) => ({ g: a.g + h.g, speedErr: a.speedErr + h.speedErr, line: a.line + h.line }), { g: 0, speedErr: 0, line: 0 }) : null;
+    const avgGlide = avg ? Math.abs(avg.g / this.lsoHist.length) : glideErr;
+    const avgSpeedErr = avg ? avg.speedErr / this.lsoHist.length : (this.ias * 1.944 - this.spec.vApproach * 1.944);
+    const avgLine = avg ? avg.line / this.lsoHist.length : Math.abs(this.offset);
+    const sink = this.sinkRate;
+    // wire centrality: 3-wire (index 2) is ideal
+    const wirePts = w === 2 ? 2 : w === 1 || w === 3 ? 1 : 0;
+    // approach quality 0..6
+    let app = 0;
+    app += avgGlide < 0.55 ? 2 : avgGlide < 0.95 ? 1 : 0;
+    app += Math.abs(avgSpeedErr) < 7 ? 2 : Math.abs(avgSpeedErr) < 13 ? 1 : 0;
+    app += avgLine < 4 ? 2 : avgLine < 7.5 ? 1 : 0;
+    if (sink > 6) app -= 2;
+    else if (sink > 4.5) app -= 1;
+    else if (sink < 2.6) app += 1;
+    if (this.lsoWaveoff) app -= 2;
+    const total = wirePts * 2 + app; // -4..10
     let grade = 'NO GRADE';
     let kind: Msg['kind'] = 'warn';
-    if (pts >= 5) {
+    let detail = `${Math.round(avgGlide*10)/10}° glideslope · ${Math.round(avgSpeedErr)} kt ${avgSpeedErr>0?'fast':'slow'} · ${avgLine.toFixed(1)} m lineup · ${sink.toFixed(1)} m/s`;
+    if (this.lsoWaveoff) {
+      grade = 'WAVEOFF';
+      kind = 'bad';
+      detail = t2('Unsafe approach', 'Aproximación insegura') + ' · ' + detail;
+    } else if (total >= 8 && w === 2 && avgGlide < 0.7 && Math.abs(avgSpeedErr) < 9 && avgLine < 5 && sink < 4) {
       grade = 'PERFECT — OK 3-WIRE';
       kind = 'good';
-    } else if (pts === 4) {
+    } else if (total >= 6 && w === 2) {
       grade = 'OK — 3-WIRE';
       kind = 'good';
-    } else if (pts === 3) {
+    } else if (total >= 5) {
       grade = '(OK)';
       kind = 'good';
-    } else if (pts === 2) {
+    } else if (total >= 3) {
       grade = 'FAIR';
       kind = 'info';
+    } else if (total >= 1) {
+      grade = 'NO GRADE';
+      kind = 'warn';
+    } else {
+      grade = 'CUT PASS';
+      kind = 'warn';
     }
+    this.lsoGrade = grade;
+    this.lsoDetail = detail;
+    // keep classic pts for scoring compatibility ( map grade to pts)
+    let pts = 2;
+    if (grade.includes('PERFECT')) pts = 5;
+    else if (grade === 'OK — 3-WIRE') pts = 4;
+    else if (grade === '(OK)') pts = 3;
+    else if (grade === 'FAIR') pts = 2;
+    else if (grade === 'NO GRADE') pts = 1;
+    else pts = 0;
     this.lastGrade = grade;
     const mult = this.comboMult();
     const score = Math.round(Math.max(0, pts) * 150 * mult);
@@ -1492,7 +2209,7 @@ export class Sim {
     this.combo += 1;
     this.comboT = 0;
     if (pts >= 5) this.events.add('perfect_trap');
-    const note: string[] = [];
+    const note: string[] = [detail];
     if (this.weather.wetness > 0.5) {
       note.push(t2('wet deck', 'cubierta mojada'));
       this.events.add('wet_trap');
@@ -1505,7 +2222,9 @@ export class Sim {
     this.say(
       t2(`TRAP! Wire #${w + 1}`, `¡ENGANCHADO! Cable nº${w + 1}`),
       kind,
-      `${grade} · ${this.sinkRate.toFixed(1)} m/s${note.length ? ` · ${note.join(' · ')}` : ''} · +${score} · ${t2('SPACE to relaunch', 'ESPACIO para relanzar')}`,
+      `${grade} · ${this.sinkRate.toFixed(1)} m/s${note.length ? ` · ${note.join(' · ')}` : ''} · +${score} · ${
+        this.touch ? t2('CAT to relaunch', 'CATAP para relanzar') : t2('SPACE to relaunch', 'ESPACIO para relanzar')
+      }`,
       8,
     );
   }
@@ -1661,10 +2380,9 @@ export class Sim {
       if (!this.grounded && this.g > 4.2 && this.tas > 90) {
         this.addParticle('trail', this.x - c * 1.5, this.y - 0.2, 0, 0, 1.6, 0.35, 0.8, [255, 255, 255]);
       }
-      // aerobatic smoke: a colour trail from the tail. Aircraft with a display
-      // palette (PC-21: red/yellow) alternate bands of their colours, the rest
-      // cycle through the rainbow.
-      if (this.smokeOn) {
+      // aerobatic smoke: a colour trail from the tail. Only aircraft with
+      // display smoke (PC-21: red/yellow bands) can switch it on — see toggleSmoke.
+      if (this.smokeOn && s.displaySmoke) {
         this.smokeT += 0.03;
         let col: [number, number, number];
         if (s.smokeColors && s.smokeColors.length > 0) {

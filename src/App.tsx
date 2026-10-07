@@ -40,12 +40,13 @@ export default function App() {
   const start = useCallback(
     (s: SimSettings, m: Mission | null) => {
       const spec = applyUpgrades(s.spec, profile);
-      setSettings({ ...s, spec });
+      const emerg = (s as any).emergenciesEnabled ?? (profile.emergenciesEnabled !== false && !sandbox.god && !s.sandbox?.god);
+      setSettings({ ...s, spec, emergenciesEnabled: emerg } as SimSettings);
       setMission(m);
       setRun((r) => r + 1);
       setScreen('game');
     },
-    [profile],
+    [profile, sandbox.god],
   );
 
   const finish = useCallback(

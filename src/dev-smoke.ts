@@ -1,5 +1,5 @@
 /* Headless smoke test: run the simulation without a browser and check the new systems. */
-import { Sim } from './game/sim';
+import { Sim, SUSP_STATIC_M, SUSP_STATIC_N } from './game/sim';
 import type { Input } from './game/sim';
 import { getAircraft } from './game/aircraft';
 import type { AircraftId } from './game/aircraft';
@@ -9,8 +9,10 @@ import type { FlightSummary } from './game/career';
 import { Weather, WX } from './game/weather';
 import { SANDBOX_DEFAULT, clampTune as clampTuneForTest } from './game/sandbox';
 import { DECOR } from './game/decor';
-import { getAirport } from './game/world';
+import { getAirport, terrainHeight } from './game/world';
+import { screenZoomFor } from './game/render';
 import { AIRCRAFT } from './game/aircraft';
+import { isHandheld, setUiMode, uiModeFromSearch, wantsTouchUi } from './game/ui';
 
 const input: Input = { pitch: 0, thr: 1, brake: false, rudder: 0 };
 let failures = 0;
@@ -23,7 +25,7 @@ const check = (name: string, ok: boolean, extra = '') => {
 
 function fly(label: string, mode: 'open' | 'carrier', weather: 'clear' | 'storm' | 'snow' | 'fog' | 'crosswind', aircraft: AircraftId, withMission: boolean, seconds: number) {
   console.log(`\n== ${label} ==`);
-  const profile = { ...emptyProfile(), owned: ['pc21', 'cn235', 'ef18', 'typhoon'] as AircraftId[] };
+  const profile = { ...emptyProfile(), owned: ['pc21', 'cn235', 'cn235mpa', 'ef18', 'typhoon'] as AircraftId[] };
   const spec = applyUpgrades(getAircraft(aircraft), profile);
   const mission = withMission ? generateMission({ mode, x: 0, seed: 42, rankIndex: 2 }) : null;
   const sim = new Sim({ mode, spec, tod: 'day', startAir: !withMission, weather: mission ? mission.weather : weather, mission });
@@ -107,6 +109,9 @@ const summary: FlightSummary = {
   assist: false,
   events: ['perfect_landing'],
   notes: [],
+  sarDropDist: null,
+  lsoGrade: null,
+  missionKind: null,
 };
 const res = award(p, summary);
 check('award pays out', res.money > 0 && res.xp > 0, `${res.money} cr, ${res.xp} XP`);
@@ -121,7 +126,7 @@ void WX;
 // ---------------------------------------------------------------- landing & mission pipeline
 console.log('\n== Landing pipeline (crosswind) ==');
 {
-  const profile = { ...emptyProfile(), owned: ['pc21', 'cn235', 'ef18', 'typhoon'] as AircraftId[] };
+  const profile = { ...emptyProfile(), owned: ['pc21', 'cn235', 'cn235mpa', 'ef18', 'typhoon'] as AircraftId[] };
   const spec = applyUpgrades(getAircraft('ef18'), profile);
   const mission = generateMission({ mode: 'open', x: 0, seed: 7, rankIndex: 0, kind: 'ferry' });
   const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'crosswind', mission });
@@ -169,6 +174,116 @@ console.log('\n== Landing pipeline (crosswind) ==');
   check('flight paid out', r2.money > 0, `${r2.money} cr / ${r2.xp} XP`);
 }
 
+// ---------------------------------------------------------------- oleo suspension
+console.log('\n== Oleo suspension ==');
+{
+  // touchdown squashes the oleos on every aircraft, then they settle to rest
+  const spec = getAircraft('pc21');
+  const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+  const ap = getAirport(0);
+  // parked half a metre over the runway, gently settling — no time to stall
+  sim.x = ap.x - 120;
+  sim.y = ap.elev + spec.gearH + 0.6;
+  sim.u = spec.vApproach * 1.15;
+  sim.vy = -1.0;
+  sim.p = 0.06;
+  sim.grounded = false;
+  sim.airTime = 30;
+  sim.gear = 1;
+  sim.gearCmd = 1;
+  sim.flaps = 2;
+  sim.flapPos = 2;
+  sim.parked = false;
+  sim.assist = true;
+  sim.throttle = 0.35;
+  sim.thrust = 0.35;
+  const dt = 1 / 60;
+  let i = 0;
+  for (; i < 20 * 60 && !sim.grounded; i++) sim.update(dt, { pitch: -0.05, thr: 0, brake: false, rudder: 0 });
+  check('test landing touched down', sim.grounded && sim.alive, `sink ${sim.sinkRate.toFixed(2)} m/s`);
+  let peak = 0;
+  for (let j = 0; j < 1.5 * 60; j++) {
+    sim.update(dt, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+    peak = Math.max(peak, sim.suspM);
+  }
+  check('oleos compress on touchdown', peak > SUSP_STATIC_M + 0.08, `peak ${(peak - SUSP_STATIC_M).toFixed(2)} m over rest`);
+  for (let j = 0; j < 4 * 60; j++) sim.update(dt, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+  check(
+    'suspension settles back to rest',
+    Math.abs(sim.suspM - SUSP_STATIC_M) < 0.03 && Math.abs(sim.suspN - SUSP_STATIC_N) < 0.03,
+    `main ${sim.suspM.toFixed(3)} nose ${sim.suspN.toFixed(3)}`,
+  );
+
+  // fighters hop rolling slowly off the chocks and smooth out going fast
+  // (lift unloads the oleos); transports stay glued at any speed
+  const rollTravel = (id: 'ef18' | 'cn235', speed: number) => {
+    const sp = getAircraft(id);
+    const s = new Sim({ mode: 'open', spec: sp, tod: 'day', startAir: false, weather: 'clear', mission: null });
+    const home = getAirport(0);
+    s.parked = false;
+    let lo = 1e9;
+    let hi = -1e9;
+    for (let j = 0; j < 3 * 60; j++) {
+      // pinned to a steady roll: the hop only needs wheel speed over the joints
+      s.grounded = true;
+      s.y = home.elev + sp.gearH;
+      s.vy = 0;
+      s.p = 0;
+      s.u = speed;
+      s.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+      const d = s.suspPose().main;
+      lo = Math.min(lo, d);
+      hi = Math.max(hi, d);
+    }
+    return hi - lo;
+  };
+  const fighterSlow = rollTravel('ef18', 8);
+  const fighterFast = rollTravel('ef18', 60);
+  const transportSlow = rollTravel('cn235', 8);
+  check('fighter hops rolling slowly', fighterSlow > 0.05, `travel ${fighterSlow.toFixed(2)} m`);
+  check('fighter smooths out going fast', fighterFast < 0.05, `travel ${fighterFast.toFixed(3)} m`);
+  check('transport rolls smooth', transportSlow < 0.02, `travel ${transportSlow.toFixed(3)} m`);
+
+  // both gears bounce as one on the joints — no seesaw rocking
+  {
+    const sp = getAircraft('ef18');
+    const s = new Sim({ mode: 'open', spec: sp, tod: 'day', startAir: false, weather: 'clear', mission: null });
+    const home = getAirport(0);
+    s.parked = false;
+    let maxDiff = 0;
+    for (let j = 0; j < 3 * 60; j++) {
+      s.grounded = true;
+      s.y = home.elev + sp.gearH;
+      s.vy = 0;
+      s.p = 0;
+      s.u = 8;
+      s.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+      const so = s.suspPose();
+      maxDiff = Math.max(maxDiff, Math.abs(so.nose - so.main));
+    }
+    check('both gears bounce together', maxDiff < 0.06, `max split ${maxDiff.toFixed(3)} m`);
+  }
+
+  // braking dives the nose oleo and unloads the mains — on every aircraft
+  {
+    const sp = getAircraft('cn235');
+    const s = new Sim({ mode: 'open', spec: sp, tod: 'day', startAir: false, weather: 'clear', mission: null });
+    const home = getAirport(0);
+    s.parked = false;
+    let so = s.suspPose();
+    for (let j = 0; j < 2 * 60; j++) {
+      s.grounded = true;
+      s.y = home.elev + sp.gearH;
+      s.vy = 0;
+      s.p = 0;
+      s.u = 60;
+      s.update(1 / 60, { pitch: 0, thr: 0, brake: true, rudder: 0 });
+      so = s.suspPose();
+    }
+    check('braking dives the nose gear', so.nose > 0.1 && so.main < -0.05, `nose ${so.nose.toFixed(2)} main ${so.main.toFixed(2)}`);
+  }
+}
+
 // ---------------------------------------------------------------- stability check
 console.log('\n== Trimmed level flight holds altitude (assist on) ==');
 {
@@ -205,11 +320,12 @@ console.log('\n== Sandbox (free play) ==');
 {
   const profile = emptyProfile();
   const spec = applyUpgrades(getAircraft('pc21'), profile);
-  const tune = { ...SANDBOX_DEFAULT, on: true, god: true, fuel: true, wx: 12, wz: 4, turb: 0.2, weather: 'storm' as const };
+  // gust: 0 — gusts are random noise around the mean wind, and this block asserts the mean
+  const tune = { ...SANDBOX_DEFAULT, on: true, god: true, fuel: true, wx: 12, wz: 4, turb: 0.2, gust: 0, weather: 'storm' as const };
   const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'storm', mission: null, sandbox: tune });
   // the tuner drives the air, not the preset
   sim.update(1 / 60, { pitch: 0, thr: 1, brake: false, rudder: 0 });
-  const probe = { x: 0, y: 300, time: 40, isDay: true, mode: 'open' as const, slope: 0, smoothness: 1 };
+  const probe = { x: 0, y: 950, time: 40, isDay: true, mode: 'open' as const, slope: 0, smoothness: 1 };
   const plain = new Weather('clear', 'open').sample(probe);
   const tuned = new Weather('clear', 'open');
   tuned.tune = { ...tune, weather: 'clear' };
@@ -222,7 +338,7 @@ console.log('\n== Sandbox (free play) ==');
   check('tuner sets the crosswind', Math.abs(air.wz - tune.wz) < 5, `wz ${air.wz.toFixed(1)} m/s (asked ${tune.wz})`);
   check('tuner calms the turbulence', air.turb < 0.5 && sim.air.turb < 0.5, `turb ${air.turb.toFixed(2)} / ${sim.air.turb.toFixed(2)} (storm preset is 0.92)`);
   // god mode: fly it straight into the ground
-  sim.y = 220;
+  sim.y = terrainHeight(sim.x, 'open') + 220;
   sim.vy = -40;
   sim.p = -0.4;
   sim.grounded = false;
@@ -297,16 +413,24 @@ console.log('\n== Flight helpers ==');
     check('too high reads positive', !!high && high.dev > 40, high ? `${high.dev.toFixed(0)} m high` : '—');
   }
 
-  // --- aerobatic smoke emits a trail
+  // --- aerobatic smoke emits a trail (PC-21 display smoke only)
   {
-    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
-    sim.u = spec.vCruise;
+    const smokeSpec = getAircraft('pc21');
+    const sim = new Sim({ mode: 'open', spec: smokeSpec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+    sim.u = smokeSpec.vCruise;
     const before = sim.particles.length;
     sim.toggleSmoke();
     for (let i = 0; i < 60; i++) sim.update(1 / 60, { ...idle, thr: 0.3 });
     check('smoke trail is emitted', sim.smokeOn && sim.particles.length > before, `${sim.particles.length} particles`);
     sim.toggleSmoke();
     check('smoke can be switched off', !sim.smokeOn, 'off');
+  }
+
+  // --- anything without display smoke refuses the toggle (this block's spec is the EF-18)
+  {
+    const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+    sim.toggleSmoke();
+    check('fighters refuse smoke', !sim.smokeOn, 'no display smoke equipped');
   }
 }
 
@@ -410,6 +534,120 @@ console.log('\n== Display smoke palette ==');
 }
 
 
+// ---------------------------------------------------------------- level Vmax & supermanoeuvrability
+console.log('\n== Level Vmax & supermanoeuvrability ==');
+{
+  // dead-calm night air: level speed is won or lost on drag alone
+  const stillAir = { ...SANDBOX_DEFAULT, on: true, god: true, fuel: true, wx: 0, wz: 0, gust: 0, turb: 0, weather: 'clear' as const, tod: 'night' as const };
+  const levelVmax = (id: 'ef18' | 'pc21' | 'cn235' | 'cn235mpa' | 'typhoon', altAGL: number, seconds = 110) => {
+    const spec = getAircraft(id);
+    const sim = new Sim({ mode: 'open', spec, tod: 'night', startAir: true, weather: 'clear', mission: null, sandbox: stillAir });
+    const ap = getAirport(0);
+    sim.x = ap.x;
+    sim.y = ap.elev + altAGL;
+    sim.u = spec.vCruise;
+    sim.vy = 0;
+    sim.p = 0.05;
+    sim.grounded = false;
+    sim.parked = false;
+    sim.gear = 0;
+    sim.gearCmd = 0;
+    sim.assist = true;
+    sim.altHold = sim.y;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < seconds * 60; i++) {
+      sim.update(1 / 60, { pitch: 0, thr: 1, brake: false, rudder: 0 });
+      if (i > (seconds - 15) * 60) {
+        sum += sim.tas;
+        n++;
+      }
+    }
+    return { v: sum / n, over: sim.overspeed, alive: sim.alive };
+  };
+  const hot = levelVmax('typhoon', 3350);
+  check('typhoon hits Mach 2 (~1330 kts)', hot.alive && hot.v > 640 && hot.v < 740, `${(hot.v * 1.944).toFixed(0)} kts level`);
+  check('Mach 2 cruise trips no warnings', hot.alive && !hot.over, 'mmo/vne coherent');
+  for (const [id, alt, lo, hi] of [['ef18', 300, 470, 545], ['pc21', 300, 175, 205], ['cn235', 300, 118, 140], ['cn235mpa', 300, 116, 140]] as const) {
+    const r = levelVmax(id, alt);
+    check(`${id} hits its book Vmax`, r.alive && r.v > lo && r.v < hi, `${(r.v * 1.944).toFixed(0)} kts level`);
+  }
+
+  // raw stick, no assist: how far the nose goes on a full pull
+  const pull = (id: 'ef18' | 'pc21' | 'cn235' | 'cn235mpa' | 'typhoon', v0: number, pullS = 4) => {
+    const spec = getAircraft(id);
+    const sim = new Sim({ mode: 'open', spec, tod: 'night', startAir: true, weather: 'clear', mission: null, sandbox: stillAir });
+    const ap = getAirport(0);
+    sim.x = ap.x;
+    sim.y = ap.elev + 1500;
+    sim.u = v0;
+    sim.vy = 0;
+    sim.p = 0.05;
+    sim.grounded = false;
+    sim.parked = false;
+    sim.gear = 0;
+    sim.gearCmd = 0;
+    sim.assist = false;
+    let peakA = 0;
+    for (let i = 0; i < pullS * 60; i++) {
+      sim.update(1 / 60, { pitch: 1, thr: 0.6, brake: false, rudder: 0 });
+      peakA = Math.max(peakA, sim.aoa);
+    }
+    return { peakA, alive: sim.alive };
+  };
+  const tPull = pull('typhoon', 160);
+  check('fighters point hard at speed', tPull.peakA > 0.7, `${(tPull.peakA * 57.3).toFixed(0)}° alpha`);
+  const ePull = pull('ef18', 160);
+  check('Hornet goes post-stall on demand', ePull.peakA > 1.0, `${(ePull.peakA * 57.3).toFixed(0)}° alpha`);
+
+  // the Cobra: yank at 110 m/s, stand on the tail, let go and fly out of it
+  {
+    const spec = getAircraft('typhoon');
+    const sim = new Sim({ mode: 'open', spec, tod: 'night', startAir: true, weather: 'clear', mission: null, sandbox: stillAir });
+    const ap = getAirport(0);
+    sim.x = ap.x;
+    sim.y = ap.elev + 1500;
+    sim.u = 110;
+    sim.vy = 0;
+    sim.p = 0.05;
+    sim.grounded = false;
+    sim.parked = false;
+    sim.gear = 0;
+    sim.gearCmd = 0;
+    sim.assist = false;
+    let peakA = 0;
+    for (let i = 0; i < 3 * 60; i++) {
+      sim.update(1 / 60, { pitch: 1, thr: 0.6, brake: false, rudder: 0 });
+      peakA = Math.max(peakA, sim.aoa);
+    }
+    for (let i = 0; i < 5 * 60; i++) sim.update(1 / 60, { pitch: 0, thr: 0.6, brake: false, rudder: 0 });
+    check('Typhoon flies the cobra', peakA > 1.0 && sim.aoa < 0.6 && sim.alive, `peak ${(peakA * 57.3).toFixed(0)}°, recovered`);
+  }
+
+  const cPull = pull('cn235', 90);
+  check('transport stays docile', cPull.peakA < 0.5, `${(cPull.peakA * 57.3).toFixed(0)}° alpha`);
+  const mpaPull = pull('cn235mpa', 90);
+  check('MPA stays docile', mpaPull.peakA < 0.5 && mpaPull.alive, `${(mpaPull.peakA * 57.3).toFixed(0)}° alpha`);
+}
+
+// ---------------------------------------------------------------- engine loop samples
+console.log('\n== Engine loop samples ==');
+{
+  // the recorded loops the audio engine plays: must exist and be valid WAV
+  const fsMod = await import('node:fs');
+  for (const n of ['propeller', 'afterburner']) {
+    const p = `src/assets/engines/${n}.wav`;
+    const ok = fsMod.existsSync(p);
+    check(`${n}.wav is on disk`, ok, p);
+    if (!ok) continue;
+    const b = fsMod.readFileSync(p);
+    const riff = b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WAVE';
+    const di = b.indexOf('data');
+    const dur = di > 0 ? (b.length - di - 8) / b.readUInt32LE(28) : 0;
+    check(`${n}.wav is a valid loop`, riff && dur > 2, `${dur.toFixed(1)} s seamless`);
+  }
+}
+
 // ---------------------------------------------------------------- scenery & turn modifier
 console.log('\n== Scenery sprites & turn modifier ==');
 {
@@ -461,6 +699,234 @@ console.log('\n== Scenery sprites & turn modifier ==');
     `x0.6 ${reversals['0.6'].toFixed(2)} s · x1 ${reversals['1'].toFixed(2)} s · x2 ${reversals['2'].toFixed(2)} s`,
   );
   check('turn modifier stays in range', reversals['0.6'] < 4.2 && reversals['2'] > 0.5, 'no runaway');
+}
+
+// ---------------------------------------------------------------- meseta terrain & GPWS flags
+console.log('\n== Meseta terrain & GPWS flags ==');
+{
+  // no 2000 m spikes near home: the meseta stays a high rolling plain
+  let homeMax = -1e9;
+  let homeMin = 1e9;
+  let peakGrad = 0;
+  let prev = terrainHeight(-30000, 'open');
+  for (let x = -30000; x <= 30000; x += 100) {
+    const h = terrainHeight(x, 'open');
+    homeMax = Math.max(homeMax, h);
+    homeMin = Math.min(homeMin, h);
+    peakGrad = Math.max(peakGrad, Math.abs(h - prev) / 100);
+    prev = h;
+  }
+  check('meseta stays near 600 m around home', homeMin > 450 && homeMax < 1200, `${homeMin.toFixed(0)}..${homeMax.toFixed(0)} m over ±30 km`);
+  check('no terrain spikes near home', peakGrad < 0.6, `steepest ${(peakGrad * 100).toFixed(0)}% over 100 m`);
+  // ... but a real sierra rises far out
+  let farMax = -1e9;
+  for (let x = 60000; x <= 140000; x += 200) farMax = Math.max(farMax, terrainHeight(x, 'open'));
+  check('sierra rises far from home', farMax > 1500, `peak ${farMax.toFixed(0)} m past 60 km`);
+  // home field sits on the meseta with a Spanish name
+  const home = getAirport(0);
+  check('home is Torrejón on the meseta', home.name === 'Torrejón' && home.elev > 550 && home.elev < 700, `${home.name} ${home.elev.toFixed(0)} m`);
+
+  // GPWS mode 4: gear up, low, slow and descending latches the flag the HUD + voice share
+  const spec = getAircraft('pc21');
+  const sim = new Sim({ mode: 'open', spec, tod: 'day', startAir: true, weather: 'clear', mission: null });
+  sim.x = home.x - 3000;
+  sim.y = terrainHeight(sim.x, 'open') + 60;
+  sim.u = spec.vs * 1.1;
+  sim.vy = -3;
+  sim.p = -0.05;
+  sim.grounded = false;
+  sim.parked = false;
+  sim.gear = 0;
+  sim.gearCmd = 0;
+  for (let i = 0; i < 30; i++) sim.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+  check('TOO LOW GEAR latches gear-up low and slow', sim.tooLowGear && sim.alive, `agl=${sim.agl.toFixed(0)} ias=${sim.ias.toFixed(0)}`);
+  sim.toggleGear();
+  for (let i = 0; i < 30; i++) sim.update(1 / 60, { pitch: 0.3, thr: 0.5, brake: false, rudder: 0 });
+  check('TOO LOW GEAR clears with the wheels down', !sim.tooLowGear, `gear=${sim.gear.toFixed(2)}`);
+}
+
+// ---------------------------------------------------------------- GUI detection
+console.log('\n== Automatic GUI selection ==');
+{
+  // stand a fake browser up: a phone reports coarse + no hover, a PC the opposite
+  const g = globalThis as any;
+  const original = g.window;
+  const fake = (coarse: boolean, hover: boolean, search = '') => {
+    g.window = {
+      location: { search },
+      matchMedia: (q: string) => ({ matches: q.includes('pointer') ? coarse : hover ? false : true, addEventListener() {}, removeEventListener() {} }),
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    };
+  };
+  try {
+    setUiMode('auto');
+    fake(true, false); // an actual phone / tablet
+    check('handheld detected', isHandheld() && wantsTouchUi(), 'coarse pointer, no hover');
+    fake(false, true); // a desktop with a mouse
+    check('desktop detected', !isHandheld() && !wantsTouchUi(), 'fine pointer, hover');
+    // a narrow window is not a phone: a shrunken desktop keeps its own GUI
+    fake(false, true);
+    check('narrow desktop keeps the keyboard GUI', !wantsTouchUi(), 'width does not decide');
+    // the URL override is read once, when the game boots
+    check('?ui= parses', uiModeFromSearch('?ui=touch') === 'touch' && uiModeFromSearch('?ui=desktop') === 'desktop' && uiModeFromSearch('?ui=nope') === null, 'touch | desktop | auto');
+    setUiMode('touch');
+    check('pause-menu switch forces the touch deck', wantsTouchUi(), 'runtime override');
+    setUiMode('desktop');
+    check('pause-menu switch forces the keyboard GUI', !wantsTouchUi(), 'runtime override');
+  } finally {
+    setUiMode('auto');
+    if (original === undefined) delete g.window;
+    else g.window = original;
+  }
+}
+
+// ---------------------------------------------------------------- screen-size zoom
+console.log('\n== Screen-size zoom ==');
+{
+  check('phone zoom untouched', screenZoomFor(390) === 1 && screenZoomFor(720) === 1, '≤720p → ×1');
+  check('1080p zooms in a bit', Math.abs(screenZoomFor(1080) - 1.5) < 1e-9, `×${screenZoomFor(1080)}`);
+  check('1440p doubles the zoom', Math.abs(screenZoomFor(1440) - 2) < 1e-9, `×${screenZoomFor(1440)}`);
+  check('4K zoom is capped', screenZoomFor(2160) === 2, `×${screenZoomFor(2160)}`);
+}
+
+// ---------------------------------------------------------------- wheel brakes & spoilers
+console.log('\n== Wheel brakes & spoilers ==');
+{
+  // fighters carry stronger brakes than the transports
+  check('EF-18 brakes hit harder', (getAircraft('ef18').brakePower ?? 1) === 1.35, `x${getAircraft('ef18').brakePower}`);
+  check('Typhoon brakes hit harder', (getAircraft('typhoon').brakePower ?? 1) === 1.35, `x${getAircraft('typhoon').brakePower}`);
+  check('transport brakes stay stock', (getAircraft('cn235').brakePower ?? 1) === 1, `x${getAircraft('cn235').brakePower ?? 1}`);
+
+  // the spoiler toggle latches and the panels travel in under a second
+  const sp = getAircraft('ef18');
+  const t = new Sim({ mode: 'open', spec: sp, tod: 'day', startAir: false, weather: 'clear', mission: null });
+  const home = getAirport(0);
+  t.spoilerCmd = 0;
+  t.spoilerPos = 0;
+  t.toggleSpoilers();
+  check('spoiler toggle latches up', t.spoilerCmd === 1, `cmd=${t.spoilerCmd}`);
+  for (let j = 0; j < 60; j++) {
+    t.grounded = true;
+    t.y = home.elev + sp.gearH;
+    t.vy = 0;
+    t.p = 0;
+    t.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+  }
+  check('spoiler panels travel up', t.spoilerPos > 0.9, `pos=${t.spoilerPos.toFixed(2)}`);
+  t.toggleSpoilers();
+  for (let j = 0; j < 60; j++) {
+    t.grounded = true;
+    t.y = home.elev + sp.gearH;
+    t.vy = 0;
+    t.p = 0;
+    t.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+  }
+  check('spoiler panels stow again', t.spoilerCmd === 0 && t.spoilerPos < 0.1, `pos=${t.spoilerPos.toFixed(2)}`);
+
+  // dead-calm night air: gusts and thermals are seeded noise, and these blocks
+  // assert the brakes, so the atmosphere stays out of it
+  const stillAir = { ...SANDBOX_DEFAULT, on: true, god: true, fuel: true, wx: 0, wz: 0, gust: 0, turb: 0, weather: 'clear' as const, tod: 'night' as const };
+  // pinned to the runway like the suspension tests, but u decays for real
+  const rollout = (id: 'ef18' | 'cn235', brake: boolean, spoiler: boolean, u0 = 70) => {
+    const spec = getAircraft(id);
+    const s = new Sim({ mode: 'open', spec, tod: 'night', startAir: false, weather: 'clear', mission: null, sandbox: stillAir });
+    const ap = getAirport(0);
+    s.parked = false;
+    s.gear = 1;
+    s.gearCmd = 1;
+    s.grounded = true;
+    s.u = u0;
+    if (spoiler) {
+      s.toggleSpoilers();
+      for (let j = 0; j < 60; j++) {
+        s.grounded = true;
+        s.y = ap.elev + spec.gearH;
+        s.vy = 0;
+        s.p = 0;
+        s.u = u0;
+        s.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+      }
+    }
+    const x0 = s.x;
+    let j = 0;
+    for (; j < 30 * 60 && s.u > 1; j++) {
+      s.grounded = true;
+      s.y = ap.elev + spec.gearH;
+      s.vy = 0;
+      s.p = 0;
+      s.update(1 / 60, { pitch: 0, thr: 0, brake, rudder: 0 });
+    }
+    return { dist: s.x - x0, stopped: s.u <= 1 };
+  };
+  const fighterBrakes = rollout('ef18', true, false, 45);
+  const transportBrakes = rollout('cn235', true, false, 45);
+  const fighterHotClean = rollout('ef18', true, false);
+  const fighterHot = rollout('ef18', true, true);
+  check('fighter out-brakes the transport', fighterBrakes.dist < transportBrakes.dist, `${fighterBrakes.dist.toFixed(0)} m vs ${transportBrakes.dist.toFixed(0)} m`);
+  check('spoilers shorten the rollout', fighterHot.dist < fighterHotClean.dist, `${fighterHot.dist.toFixed(0)} m vs ${fighterHotClean.dist.toFixed(0)} m`);
+  check('fighter stops from 70 m/s in bounds', fighterHot.stopped && fighterHot.dist < 600, `${fighterHot.dist.toFixed(0)} m`);
+
+  // spoilers alone drag the jet down faster at idle — no brakes touched
+  const idle = (spoiler: boolean) => {
+    const spec = getAircraft('ef18');
+    const s = new Sim({ mode: 'open', spec, tod: 'night', startAir: false, weather: 'clear', mission: null, sandbox: stillAir });
+    const ap = getAirport(0);
+    s.parked = false;
+    s.gear = 1;
+    s.gearCmd = 1;
+    s.grounded = true;
+    s.u = 70;
+    if (spoiler) {
+      s.toggleSpoilers();
+      for (let j = 0; j < 60; j++) {
+        s.grounded = true;
+        s.y = ap.elev + spec.gearH;
+        s.vy = 0;
+        s.p = 0;
+        s.u = 70;
+        s.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+      }
+    }
+    for (let j = 0; j < 3 * 60; j++) {
+      s.grounded = true;
+      s.y = ap.elev + spec.gearH;
+      s.vy = 0;
+      s.p = 0;
+      s.update(1 / 60, { pitch: 0, thr: 0, brake: false, rudder: 0 });
+    }
+    return s.u;
+  };
+  const clean = idle(false);
+  const spoiled = idle(true);
+  check('spoilers add idle drag', spoiled < clean - 1, `${clean.toFixed(1)} → ${spoiled.toFixed(1)} m/s`);
+}
+
+// ------------------------------------------------- fighter turn authority
+console.log('\n== Fighter turn authority ==');
+{
+  const stillAir = { ...SANDBOX_DEFAULT, on: true, god: false, fuel: true, wx: 0, wz: 0, gust: 0, turb: 0, weather: 'clear' as const, tod: 'night' as const };
+  const reverse = (id: 'ef18' | 'typhoon', v0: number) => {
+    const spec = getAircraft(id);
+    const s = new Sim({ mode: 'open', spec, tod: 'night', startAir: true, weather: 'clear', mission: null, sandbox: stillAir });
+    const ap = getAirport(0);
+    s.x = ap.x; s.y = ap.elev + 4000;
+    s.u = v0; s.vy = 0; s.p = 0;
+    s.grounded = false; s.parked = false;
+    s.gear = 0; s.gearCmd = 0; s.assist = false;
+    let tRev = -1;
+    for (let i = 0; i < 30 * 60; i++) {
+      s.update(1 / 60, { pitch: 1, thr: 1, brake: false, rudder: 0 });
+      if (tRev < 0 && Math.abs(s.p) > Math.PI * 0.9) tRev = i / 60;
+      if (!s.alive) break;
+    }
+    return { tRev, dmg: s.damage, alive: s.alive };
+  };
+  const ty = reverse('typhoon', 450);
+  check('typhoon reverses quickly at max speed', ty.tRev > 0 && ty.tRev < 8, `${ty.tRev.toFixed(1)}s`);
+  check('typhoon high-g reversal causes no damage', ty.alive && ty.dmg < 0.01, `dmg=${ty.dmg.toFixed(2)}`);
+  const ef = reverse('ef18', 400);
+  check('ef18 reverses quickly at max speed', ef.tRev > 0 && ef.tRev < 7.5, `${ef.tRev.toFixed(1)}s`);
+  check('ef18 high-g reversal causes no damage', ef.alive && ef.dmg < 0.01, `dmg=${ef.dmg.toFixed(2)}`);
 }
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

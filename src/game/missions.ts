@@ -28,6 +28,15 @@ export interface Gate {
   passed: boolean;
 }
 
+export interface SarMeta {
+  /** centre of the search datum broadcast on the radio */
+  datumX: number;
+  /** actual position of the raft / boat */
+  targetX: number;
+  /** radius of the datum uncertainty circle (metres) */
+  searchRadius: number;
+}
+
 export interface Mission {
   id: string;
   kind: MissionKind;
@@ -52,6 +61,8 @@ export interface Mission {
   /** landing inside this distance of the runway centre for precision work */
   zoneRadius: number | null;
   returnToStart: boolean;
+  /** maritime SAR: datum + hidden raft, rendered as sea */
+  sar?: SarMeta;
 }
 
 export interface MissionCtx {
@@ -202,15 +213,31 @@ export function generateMission(o: GenOpts): Mission {
       briefEn = `A patient is waiting. Reach ${dest.name} within ${Math.round(timeLimit / 60)} minutes and land. Weather is not on your side.`;
       briefEs = `Hay un paciente esperando. Llega a ${dest.name} en ${Math.round(timeLimit / 60)} minutos y aterriza. El tiempo no ayuda.`;
       break;
-    case 'sar':
-      addGates(1, 3200, 40, 60, 400, 'beacon');
+    case 'sar': {
+      // maritime search: datum is the last known position, the raft has drifted
+      // somewhere inside the uncertainty circle. Two gates: a large DATUM disc
+      // you have to enter to start the search, and the hidden RAFT beacon you
+      // must overfly low to spot. The after-spot drop is handled by MissionRun.
+      const baseDist = 7800 + r(7) * 5200; // 7.8–13 km from departure
+      const datumX = o.x + dir * baseDist;
+      const searchRadius = Math.round(1400 + difficulty * 320 + r(8) * 650);
+      // raft drifts inside ~75 % of the datum circle
+      const off = (r(9) - 0.5) * searchRadius * 1.35;
+      const targetX = datumX + off;
+      const datumGate: Gate = { x: datumX, y: 260, r: searchRadius, label: 'DATUM', kind: 'gate', maxAgl: 520, passed: false };
+      const raftGate: Gate = { x: targetX, y: 10, r: 340, label: 'RAFT', kind: 'beacon', maxAgl: 380, passed: false };
+      gates.push(datumGate, raftGate);
       returnToStart = true;
       landingAirport = home.id;
+      timeLimit = 900 + Math.abs(targetX - o.x) / 48;
       titleEn = 'SAR: overdue boat';
       titleEs = 'SAR: embarcación perdida';
-      briefEn = 'A boat is missing. Fly the datum low (below 400 m) to spot it, then return and land.';
-      briefEs = 'Falta una embarcación. Sobrevuela el punto por debajo de 400 m para localizarla y vuelve a aterrizar.';
+      briefEn = `A boat is missing. Last datum ${ (searchRadius/1000).toFixed(1)} km wide, ${Math.round(Math.abs(targetX-datumX)/1000*10)/10} km off datum. Enter DATUM, spot the raft below 380 m, drop the survival kit (D) and return to ${home.name}.`;
+      briefEs = `Falta una embarcación. Último datum de ${(searchRadius/1000).toFixed(1)} km, balsa a ${Math.round(Math.abs(targetX-datumX)/1000*10)/10} km del centro. Entra en DATUM, localiza la balsa por debajo de 380 m, suelta el kit (D) y vuelve a ${home.name}.`;
+      // stash for renderer / sea patch / drop scoring
+      (globalThis as any).__sarTmp = { datumX, targetX, searchRadius };
       break;
+    }
     case 'survey':
       addGates(3, 2200, 90, 160);
       ceilAgl = 320;
@@ -256,6 +283,15 @@ export function generateMission(o: GenOpts): Mission {
   const money = Math.round((900 + missionDist * 0.09 + difficulty * 550) * (wxFactor[weather] ?? 1));
   const xp = Math.round((120 + missionDist * 0.014 + difficulty * 85) * (wxFactor[weather] ?? 1));
 
+  const sarTmp: SarMeta | undefined = (globalThis as any).__sarTmp ? { datumX: (globalThis as any).__sarTmp.datumX, targetX: (globalThis as any).__sarTmp.targetX, searchRadius: (globalThis as any).__sarTmp.searchRadius } : undefined;
+  if ((globalThis as any).__sarTmp) delete (globalThis as any).__sarTmp;
+  // SAR money is a bit richer: danger + precision drop
+  let finalMoney = money;
+  let finalXp = xp;
+  if (sarTmp) {
+    finalMoney = Math.round(money * 1.35 + 600);
+    finalXp = Math.round(xp * 1.25 + 120);
+  }
   return {
     id: `m${o.seed.toFixed(0)}-${kind}`,
     kind,
@@ -271,12 +307,13 @@ export function generateMission(o: GenOpts): Mission {
     timeLimit: timeLimit ? Math.round(timeLimit) : null,
     parTime: parTime ? Math.round(parTime) : null,
     ceilAgl,
-    money,
-    xp,
+    money: finalMoney,
+    xp: finalXp,
     weather,
     sinkLimit,
     zoneRadius,
     returnToStart,
+    ...(sarTmp ? { sar: sarTmp } : {}),
   };
 }
 
@@ -284,11 +321,26 @@ export function missionBrief(m: Mission, lang: 'en' | 'es'): { title: string; br
   return { title: lang === 'es' ? m.titleEs : m.titleEn, brief: lang === 'es' ? m.briefEs : m.briefEn };
 }
 
+export function sarDropGrade(dist: number): { en: string; es: string; bonus: number } {
+  if (dist < 18) return { en: 'PERFECT DROP', es: 'LANZAMIENTO PERFECTO', bonus: 900 };
+  if (dist < 48) return { en: 'GOOD DROP', es: 'BUEN LANZAMIENTO', bonus: 560 };
+  if (dist < 90) return { en: 'FAIR DROP', es: 'LANZAMIENTO ACEPTABLE', bonus: 280 };
+  if (dist < 160) return { en: 'POOR DROP', es: 'LANZAMIENTO FLOJO', bonus: 90 };
+  return { en: 'MISS', es: 'FALLO', bonus: 0 };
+}
+
 export function objectiveText(m: Mission, gatesLeft: number, lang: 'en' | 'es'): string {
   const L = (en: string, es: string) => (lang === 'es' ? es : en);
   if (m.mustTrap) return L(`Trap the wire (${gatesLeft} waypoints left)`, `Engancha el cable (quedan ${gatesLeft} balizas)`);
   if (gatesLeft > 0) {
     if (m.ceilAgl) return L(`${gatesLeft} waypoints left · stay below ${m.ceilAgl} m`, `Quedan ${gatesLeft} balizas · por debajo de ${m.ceilAgl} m`);
+    if (m.kind === 'sar' && m.sar) {
+      const datumDone = m.gates[0]?.passed;
+      const raftDone = m.gates[1]?.passed;
+      if (!datumDone) return L('Reach DATUM — start the search', 'Llega a DATUM y empieza la búsqueda');
+      if (!raftDone) return L('Search DATUM — spot the raft below 380 m', 'Rastrea DATUM: localiza la balsa por debajo de 380 m');
+      return L('Raft spotted — drop the kit (D)', 'Balsa localizada: suelta el kit (D)');
+    }
     if (m.kind === 'sar') return L('Find the boat (fly below 400 m)', 'Localiza la embarcación (por debajo de 400 m)');
     return L(`${gatesLeft} waypoints left`, `Quedan ${gatesLeft} balizas`);
   }
@@ -314,6 +366,13 @@ export class MissionRun {
   private missTimer = new Map<number, number>();
   pending: MissionEvent[] = [];
   endReason = '';
+  // SAR state: raft spotted = gates[1].passed, kit drop scoring
+  sarSpotted = false;
+  sarDropDone = false;
+  sarDropDist: number | null = null;
+  sarDropBonus = 0;
+  sarDropGradeEn = '';
+  sarDropGradeEs = '';
 
   constructor(m: Mission) {
     this.mission = m;
@@ -369,20 +428,40 @@ export class MissionRun {
         this.gatesHit++;
         const isLast = m.gates.every((q) => q.passed);
         if (g.kind === 'beacon') {
-          this.bonus += 400;
-          this.push({
-            en: 'TARGET FOUND', es: 'OBJETIVO LOCALIZADO',
-            subEn: 'Beacon confirmed. Return to base and land.', subEs: 'Baliza confirmada. Vuelve a la base y aterriza.',
-            kind: 'good',
-          });
+          if (m.kind === 'sar' && m.sar) {
+            // raft spotted — this is the maritime search
+            this.sarSpotted = true;
+            this.bonus += 550;
+            this.push({
+              en: 'RAFT SPOTTED', es: 'BALSA LOCALIZADA',
+              subEn: 'Drop the survival kit (press D) then return to base', subEs: 'Suelta el kit de supervivencia (pulsa D) y vuelve a la base',
+              kind: 'good',
+            });
+          } else {
+            this.bonus += 400;
+            this.push({
+              en: 'TARGET FOUND', es: 'OBJETIVO LOCALIZADO',
+              subEn: 'Beacon confirmed. Return to base and land.', subEs: 'Baliza confirmada. Vuelve a la base y aterriza.',
+              kind: 'good',
+            });
+          }
         } else {
-          this.bonus += 120;
-          this.push({
-            en: `WAYPOINT ${this.idx} CLEAR`, es: `BALIZA ${this.idx} SUPERADA`,
-            subEn: isLast && m.landingAirport !== null ? 'Now head for the airfield' : '',
-            subEs: isLast && m.landingAirport !== null ? 'Ahora dirígete al aeródromo' : '',
-            kind: 'good',
-          });
+          if (m.kind === 'sar' && g.label === 'DATUM') {
+            this.bonus += 180;
+            this.push({
+              en: 'DATUM REACHED — SEARCH THE AREA', es: 'DATUM ALCANZADO: RASTREA LA ZONA',
+              subEn: 'Raft is somewhere inside the circle — stay below 380 m', subEs: 'La balsa está dentro del círculo: mantente por debajo de 380 m',
+              kind: 'good',
+            });
+          } else {
+            this.bonus += 120;
+            this.push({
+              en: `WAYPOINT ${this.idx} CLEAR`, es: `BALIZA ${this.idx} SUPERADA`,
+              subEn: isLast && m.landingAirport !== null ? 'Now head for the airfield' : '',
+              subEs: isLast && m.landingAirport !== null ? 'Ahora dirígete al aeródromo' : '',
+              kind: 'good',
+            });
+          }
         }
       } else if (!inRange && !lowEnough) {
         // flew over the beacon too high
@@ -410,9 +489,42 @@ export class MissionRun {
       } else this.violationTimer = Math.max(0, this.violationTimer - dt * 2);
     }
 
-    // all gates done and no landing target → complete
+    // all gates done and no landing target → complete (SAR still needs the drop + landing)
     if (m.gates.length > 0 && this.gatesHit >= m.gates.length && m.landingAirport === null && !m.mustTrap) {
+      if (m.kind === 'sar' && m.sar) {
+        if (!this.sarDropDone) return; // must drop the kit first
+      }
       this.complete();
+    }
+    // SAR hint: raft spotted but no drop yet — nudge the player
+    if (m.kind === 'sar' && this.sarSpotted && !this.sarDropDone && Math.floor(this.elapsed) % 20 === 0 && Math.floor((this.elapsed - dt) % 20) !== 0) {
+      // throttled hint handled elsewhere; keep lightweight
+    }
+  }
+
+  /** SAR kit drop scoring */
+  onDrop(dist: number): void {
+    if (this.status !== 'active' || this.sarDropDone) return;
+    if (!this.sarSpotted) {
+      this.push({ en: 'Nothing to drop yet — find the raft first', es: 'Nada que lanzar: primero localiza la balsa', kind: 'warn' });
+      return;
+    }
+    const g = sarDropGrade(dist);
+    this.sarDropDone = true;
+    this.sarDropDist = dist;
+    this.sarDropBonus = g.bonus;
+    this.sarDropGradeEn = g.en;
+    this.sarDropGradeEs = g.es;
+    this.bonus += g.bonus;
+    const kind: MissionEvent['kind'] = g.bonus >= 500 ? 'good' : g.bonus >= 250 ? 'good' : g.bonus > 0 ? 'info' : 'warn';
+    this.push({
+      en: g.en, es: g.es,
+      subEn: `${dist.toFixed(0)} m from the raft · +${g.bonus} bonus`, subEs: `a ${dist.toFixed(0)} m de la balsa · +${g.bonus} bonus`,
+      kind,
+    });
+    // once the kit is down the contract is essentially the return leg
+    if (this.gatesHit >= this.mission.gates.length) {
+      this.push({ en: 'Kit on the water — RTB and land', es: 'Kit en el agua: vuelve y aterriza', subEn: '', subEs: '', kind: 'good' });
     }
   }
 
@@ -420,6 +532,17 @@ export class MissionRun {
   onLanding(info: LandingInfo): void {
     if (this.status !== 'active') return;
     const m = this.mission;
+    // SAR needs the kit on the water before you can close the contract
+    if (m.kind === 'sar' && m.sar) {
+      if (!this.sarSpotted) {
+        this.push({ en: 'Raft not yet spotted — keep searching DATUM', es: 'Balsa aún no localizada: sigue en DATUM', kind: 'warn' });
+        return;
+      }
+      if (!this.sarDropDone) {
+        this.push({ en: 'Drop the survival kit before landing (D)', es: 'Suelta el kit antes de aterrizar (D)', kind: 'warn' });
+        return;
+      }
+    }
     const gatesDone = m.gates.length === 0 || this.gatesHit >= m.gates.length;
     if (!gatesDone) {
       this.push({ en: 'Landing early — waypoints still pending', es: 'Aterrizaje prematuro: faltan balizas', kind: 'warn' });
@@ -487,6 +610,18 @@ export class MissionRun {
 
   /** HUD text for the current objective */
   objective(lang: 'en' | 'es'): string {
+    const m = this.mission;
+    if (m.kind === 'sar' && m.sar) {
+      if (this.status === 'active') {
+        if (!m.gates[0].passed) return objectiveText(m, 2, lang);
+        if (!m.gates[1].passed) return objectiveText(m, 1, lang);
+        if (!this.sarDropDone) return lang === 'es' ? 'Balsa localizada: suelta el kit (D)' : 'Raft spotted — drop the kit (D)';
+        if (m.landingAirport !== null) {
+          const ap = getAirport(m.landingAirport);
+          return lang === 'es' ? `Vuelve a ${ap.name} y aterriza` : `Return to ${ap.name} and land`;
+        }
+      }
+    }
     const left = this.mission.gates.filter((g) => !g.passed).length;
     if (this.status === 'active') return objectiveText(this.mission, left, lang);
     if (this.status === 'done') return lang === 'es' ? 'Misión completada' : 'Mission complete';
